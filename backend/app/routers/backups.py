@@ -2,10 +2,11 @@
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import Session
 
+from .. import auth
 from .. import backup as bk
 from ..database import get_session
 from ..schemas import BackupStatus, RestoreResult
@@ -70,7 +71,7 @@ def remove(filename: str):
 
 
 @router.post("/restore/{filename}", response_model=RestoreResult)
-def restore(filename: str):
+def restore(filename: str, response: Response):
     """Stellt die Datenbank aus einer bereits vorhandenen eigenen Sicherung
     wieder her. Der Dateiname wird wie beim Download/Löschen gegen das eigene
     Muster geprüft – ohne das wäre der Parameter ein Pfad-Traversal."""
@@ -78,17 +79,25 @@ def restore(filename: str):
         raise HTTPException(400, "Ungültiger Dateiname")
     path = bk.backup_dir() / filename
     try:
-        return bk.restore_from_file(path)
+        result = bk.restore_from_file(path)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc))
     except bk.RestoreError as exc:
         raise HTTPException(422, str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, f"Wiederherstellung fehlgeschlagen: {exc}")
+    # Die wiederhergestellte Datenbank bringt ihren eigenen Signaturschlüssel
+    # mit (app_settings.auth_jwt_secret) - das noch im Browser liegende Cookie
+    # ist damit ab jetzt ungültig. Explizit löschen statt es dem nächsten,
+    # fehlschlagenden Aufruf zu überlassen: sonst wertet die Oberfläche einen
+    # stillen 401-Folgefehler fälschlich als "Wiederherstellung fehlgeschlagen",
+    # obwohl sie gerade erfolgreich war.
+    auth.clear_cookie(response)
+    return result
 
 
 @router.post("/import", response_model=RestoreResult)
-async def import_and_restore(file: UploadFile = File(...)):
+async def import_and_restore(response: Response, file: UploadFile = File(...)):
     """Stellt die Datenbank aus einer hochgeladenen gzip-Sicherung wieder her.
 
     Die Datei landet zunächst in einer temporären Datei außerhalb des
@@ -105,7 +114,7 @@ async def import_and_restore(file: UploadFile = File(...)):
     try:
         tmp.write(content)
         tmp.close()
-        return bk.restore_from_file(tmp_path)
+        result = bk.restore_from_file(tmp_path)
     except bk.RestoreError as exc:
         raise HTTPException(422, str(exc))
     except FileNotFoundError as exc:
@@ -114,3 +123,8 @@ async def import_and_restore(file: UploadFile = File(...)):
         raise HTTPException(500, f"Wiederherstellung fehlgeschlagen: {exc}")
     finally:
         tmp_path.unlink(missing_ok=True)
+    # Siehe restore(): das Browser-Cookie ist mit dem Signaturschlüssel der
+    # NEUEN Datenbank nicht mehr gültig - explizit löschen statt es beim
+    # nächsten Aufruf als rätselhaften 401 auflaufen zu lassen.
+    auth.clear_cookie(response)
+    return result

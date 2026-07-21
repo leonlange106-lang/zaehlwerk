@@ -449,6 +449,10 @@ class AuthStatus(BaseModel):
     mode: str                    # "lokal" | "homeassistant"
     authenticated: bool
     setup_required: bool
+    # True, wenn die Ersteinrichtung nur deshalb nötig ist, weil bereits Konten
+    # existieren, aber keines lokal anmeldbar ist (z. B. nach dem Einspielen
+    # einer HA-Sicherung). Die Oberfläche erklärt den Fall dann gesondert.
+    recovery: bool = False
     crypto_available: bool
     user: Optional[UserRead] = None
     permissions: Optional[dict[str, Any]] = None

@@ -59,7 +59,21 @@ class RestoreError(Exception):
 
 
 def backup_dir() -> Path:
-    """/backup, falls vom Supervisor gemappt – sonst /share als Rückfallebene."""
+    """/backup, falls vom Supervisor gemappt – sonst /share als Rückfallebene.
+
+    Explizite Override per ZAEHLWERK_BACKUP_DIR geht beidem vor. Das ist keine
+    dritte Ebene der HA-Erkennung, sondern für Umgebungen ohne /backup und
+    /share gedacht: der dezentrale Standalone-Betrieb (docker-compose mountet
+    nur /data – Sicherungen unter /share lägen sonst auf der vergänglichen
+    Container-Ebene und wären beim nächsten Image-Rebuild verloren) sowie
+    Testläufe auf unprivilegierten Runnern, die weder /backup noch /share
+    anlegen dürfen.
+    """
+    override = os.environ.get("ZAEHLWERK_BACKUP_DIR")
+    if override:
+        path = Path(override)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
     if PRIMARY_DIR.is_dir() and os.access(PRIMARY_DIR, os.W_OK):
         return PRIMARY_DIR
     FALLBACK_DIR.mkdir(parents=True, exist_ok=True)

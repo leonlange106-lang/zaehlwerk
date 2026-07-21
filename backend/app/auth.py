@@ -295,9 +295,35 @@ def user_count(session: Session) -> int:
     return session.exec(select(func.count()).select_from(User)).one()
 
 
+def local_login_available(session: Session) -> bool:
+    """Gibt es mindestens ein aktives Konto mit lokalem Passwort?
+
+    Aus einem Home-Assistant-Add-on übernommene Konten haben
+    `password_hash = None` – dort meldet der Supervisor an. Wird eine solche
+    Sicherung in eine Standalone-Instanz eingespielt, existieren zwar Konten,
+    aber keines kann sich lokal anmelden. Ohne diese Unterscheidung bliebe die
+    Instanz dauerhaft ausgesperrt: `user_count` wäre > 0, also erschiene keine
+    Ersteinrichtung, und zugleich könnte sich niemand anmelden.
+    """
+    row = session.exec(
+        select(User)
+        .where(User.aktiv == True)                       # noqa: E712
+        .where(User.password_hash.is_not(None))
+        .where(User.password_hash != "")
+    ).first()
+    return row is not None
+
+
 def setup_required(session: Session) -> bool:
-    """Erste Einrichtung nötig? Nur im Standalone-Betrieb ohne Nutzer."""
-    return not ingress_mode() and user_count(session) == 0
+    """Erste Einrichtung nötig?
+
+    Im Standalone-Betrieb gilt sie als nötig, solange sich niemand lokal
+    anmelden kann – nicht nur bei null Konten (frische Instanz), sondern auch
+    nach dem Einspielen einer HA-Sicherung, deren Konten kein lokales Passwort
+    tragen. Sonst wäre die Instanz nach der Migration ausgesperrt.
+    """
+    return not ingress_mode() and not local_login_available(session)
+
 
 
 def ensure_ha_user(session: Session, info: dict) -> User:

@@ -10,6 +10,12 @@ services:
     environment:
       # Persistenter DB-Pfad. Muss auf ein gemountetes Volume zeigen.
       SQLITE_PATH: /data/zaehlwerk.db
+      # Ohne dieses Mapping würden Sicherungen unter /backup oder /share
+      # landen - beides NICHT im obigen Volume enthalten und damit bei jedem
+      # `docker compose up --build` (Update!) verloren. /data ist das einzige
+      # persistente Verzeichnis; Sicherungen gehören für Restore/Rollback
+      # zwingend dorthin.
+      ZAEHLWERK_BACKUP_DIR: /data/backups
       # Im dezentralen Betrieb greift die HA-Integration per Origin darauf zu.
       # CORS nur so weit öffnen, wie nötig (z. B. die HA-URL statt "*").
       CORS_ORIGINS: "*"

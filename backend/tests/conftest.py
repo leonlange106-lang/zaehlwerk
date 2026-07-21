@@ -15,6 +15,10 @@ _TMPDIR = tempfile.mkdtemp(prefix="zw-tests-")
 os.environ["SQLITE_PATH"] = os.path.join(_TMPDIR, "contract-test.db")
 # Deterministisch offline: die Tests sollen nie nach draußen telefonieren.
 os.environ.setdefault("CORS_ORIGINS", "*")
+# Sicherungen ebenfalls ins Testverzeichnis statt /backup oder /share: auf
+# unprivilegierten CI-Runnern (kein root) scheitert das Anlegen von /share
+# an der Dateisystemwurzel mit PermissionError.
+os.environ.setdefault("ZAEHLWERK_BACKUP_DIR", os.path.join(_TMPDIR, "backups"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 

@@ -4,8 +4,12 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.2";
+const APP_VERSION = "3.22.4";
 const APP_CHANGELOG = [
+  { v: "3.22.4", d: "21.07.2026", items: [
+    "Kritischer Fix (Aussperrung): das Einspielen einer Home-Assistant-Sicherung in eine eigenständig laufende Instanz sperrte bisher komplett aus – die aus Home Assistant übernommenen Konten haben dort kein Passwort (die Anmeldung läuft über HA), und die eigenständige Instanz bot dennoch keine Ersteinrichtung an. Jetzt erkennt Zählwerk, dass kein anmeldbares Konto existiert, und bietet die Einrichtung eines Administrator-Kontos an; ein gleichnamiges bestehendes Konto wird dabei übernommen",
+    "Kritischer Fix: nach einer Wiederherstellung aus einer Sicherung (Admin-Tools → Datenmanagement) meldete die Oberfläche fälschlich „Wiederherstellung fehlgeschlagen“, obwohl sie erfolgreich war – Ursache war ein durch die neue Datenbank ungültig gewordenes Sitzungscookie, dessen Folgefehler als Fehlschlag missverstanden wurde. Die Wiederherstellung führt jetzt sauber zur Anmeldemaske mit dem Hinweis, sich mit den Zugangsdaten aus der Sicherung neu anzumelden",
+  ]},
   { v: "3.22.2", d: "21.07.2026", items: [
     "Mobil: die Bericht-Markierung in der unteren Navigationsleiste bleibt nicht mehr hängen, wenn der Berichtsdialog geschlossen oder ein Bericht erstellt wird",
     "Mobil: die Tab-Leiste in der Detailansicht schneidet lange Beschriftungen (z. B. „Auswertung“) nicht mehr ab, sondern scrollt bei Bedarf horizontal",
@@ -2883,13 +2887,24 @@ createApp({
           }
           r = await res.json();
         }
-        this.notify(`Wiederhergestellt aus ${r.restored_from}`
-          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : ""), "ok");
         this.restoreFile = null;
         this.restoreConfirm = null;
         this.restoreConfirmText = "";
-        await this.loadBackupStatus();
-        await this.load();          // Systeme/Ablesungen: Datenbestand hat sich geändert
+        // Die wiederhergestellte Datenbank bringt ihren eigenen Signatur-
+        // schlüssel mit - die laufende Sitzung ist damit vorbei (das Backend
+        // hat das Cookie bereits gelöscht). Weitere Aufrufe mit der alten
+        // Sitzung würden nur einen 401 produzieren, der hier fälschlich als
+        // "Wiederherstellung fehlgeschlagen" ankäme, obwohl sie erfolgreich
+        // war. Stattdessen direkt sauber zur Anmeldung zurückführen.
+        this.notify(
+          `Wiederhergestellt aus ${r.restored_from}`
+          + (r.safety_backup ? ` · Sicherheitskopie: ${r.safety_backup}` : "")
+          + " – bitte mit den Zugangsdaten aus dieser Sicherung neu anmelden.",
+          "ok",
+        );
+        // /api/auth/status ist öffentlich erreichbar (auch ohne gültiges
+        // Cookie) und blendet bei authenticated:false die Anmeldemaske ein.
+        await this.checkAuth();
       } catch (e) { this.notify("Wiederherstellung fehlgeschlagen: " + e.message, "err"); }
       finally { this.restoreBusy = null; }
     },
@@ -4764,8 +4779,16 @@ createApp({
       <div class="auth-brand">◷ Zählwerk</div>
 
       <template v-if="auth.status && auth.status.setup_required">
-        <h2>Erstes Konto anlegen</h2>
-        <p class="hint">Zählwerk läuft ohne Home Assistant. Lege ein Konto an –
+        <h2>{{ auth.status.recovery ? 'Administrator-Konto einrichten' : 'Erstes Konto anlegen' }}</h2>
+        <p class="hint" v-if="auth.status.recovery">Die eingespielte Sicherung stammt
+          aus einem Home-Assistant-Add-on – die enthaltenen Konten haben dort kein
+          lokales Passwort (die Anmeldung lief über Home Assistant). Für den
+          eigenständigen Betrieb muss ein Administrator-Konto mit Passwort
+          eingerichtet werden. Vergibst du denselben Benutzernamen wie in Home
+          Assistant, wird dein bestehendes Konto übernommen; ein neuer Name legt
+          ein zusätzliches Administrator-Konto an. Deine übrigen Daten bleiben
+          unverändert.</p>
+        <p class="hint" v-else>Zählwerk läuft ohne Home Assistant. Lege ein Konto an –
           danach ist die Anwendung nur noch angemeldet erreichbar.</p>
         <div class="field"><label>Benutzername</label>
           <input class="input" v-model="authForm.username" autocomplete="username"

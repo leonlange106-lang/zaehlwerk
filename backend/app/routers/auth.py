@@ -32,10 +32,13 @@ def status(request: Request, session: Session = Depends(get_session)):
     """Immer erreichbar. Die Oberfläche entscheidet daran, ob sie eine
     Anmeldemaske, die Ersteinrichtung oder direkt die App zeigt."""
     user = auth.resolve_user(request, session)
+    needs_setup = auth.setup_required(session)
     return AuthStatus(
         mode="homeassistant" if auth.ingress_mode() else "lokal",
         authenticated=user is not None,
-        setup_required=auth.setup_required(session),
+        setup_required=needs_setup,
+        # Wiederherstellungsfall: Einrichtung nötig, obwohl schon Konten da sind.
+        recovery=needs_setup and auth.user_count(session) > 0,
         crypto_available=auth.crypto_available(),
         user=_to_read(user) if user else None,
         permissions=auth.permissions(user.role) if user else None,
@@ -46,20 +49,38 @@ def status(request: Request, session: Session = Depends(get_session)):
 @router.post("/setup", response_model=UserRead)
 def setup(payload: SetupRequest, response: Response, request: Request,
           session: Session = Depends(get_session)):
-    """Erstes Konto anlegen.
+    """Erstes lokales Administratorkonto anlegen.
 
-    Nur zulässig, solange KEIN Konto existiert. Andernfalls wäre der Endpunkt
-    eine offene Tür, über die sich jeder ein Administratorkonto anlegen könnte.
+    Zulässig, solange sich niemand lokal anmelden kann (`setup_required`): auf
+    einer frischen Instanz (kein Konto) genauso wie im Wiederherstellungsfall,
+    wenn eine eingespielte HA-Sicherung nur Konten ohne lokales Passwort
+    enthält. Sobald ein anmeldbares Konto existiert, ist der Endpunkt zu –
+    sonst wäre er eine offene Tür für ein beliebiges Administratorkonto.
     """
-    if auth.user_count(session) > 0:
-        raise HTTPException(409, "Es existiert bereits ein Konto")
+    if not auth.setup_required(session):
+        raise HTTPException(409, "Es existiert bereits ein anmeldbares Konto")
     if not auth.crypto_available():
         raise HTTPException(503, "bcrypt oder PyJWT fehlen im Image")
 
-    user = User(username=payload.username.strip().lower(),
-                display_name=payload.display_name or payload.username,
-                password_hash=auth.hash_password(payload.password),
-                role="admin", is_admin=True)
+    username = payload.username.strip().lower()
+    # Wiederherstellungsfall: trägt ein bereits vorhandenes Konto (z. B. aus
+    # der HA-Sicherung) denselben Namen, wird es übernommen – Passwort setzen,
+    # aktivieren, zum Administrator machen – statt eine zweite Kennung anzulegen.
+    # So kann der Nutzer sein gewohntes Konto "adoptieren"; ein neuer Name legt
+    # dagegen ein frisches Administratorkonto an.
+    user = session.exec(select(User).where(User.username == username)).first()
+    if user:
+        user.password_hash = auth.hash_password(payload.password)
+        user.aktiv = True
+        user.role = "admin"
+        user.is_admin = True
+        if payload.display_name:
+            user.display_name = payload.display_name
+    else:
+        user = User(username=username,
+                    display_name=payload.display_name or payload.username,
+                    password_hash=auth.hash_password(payload.password),
+                    role="admin", is_admin=True)
     session.add(user)
     session.commit()
     session.refresh(user)
