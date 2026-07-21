@@ -36,18 +36,57 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
-from .. import audit
+from .. import audit, auth
 from .. import backup as backup_mod, mqtt_client, ocr as ocr_mod, outbound
 from ..config import settings as runtime_settings
 from ..database import engine, get_session
 from ..migrations import schema_version
 from ..models import AuditLog, User
 from ..auth import current_user
-from ..schemas import SqlQueryRequest
+from ..schemas import SqlQueryRequest, UserCreateRequest, UserCreateResponse, UserRead
 from ..version import APP_VERSION
 
 log = logging.getLogger("zaehlwerk.admin")
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@router.post("/users/create", response_model=UserCreateResponse, status_code=201)
+def create_user(payload: UserCreateRequest,
+                actor: User = Depends(current_user),
+                session: Session = Depends(get_session)):
+    """Neues Konto anlegen. Das System vergibt ein sicheres temporäres Passwort
+    und gibt es dem Administrator EINMALIG im Klartext zurück (nie erneut
+    abrufbar). Der neue Nutzer wird beim ersten Login zu Passwortwechsel und
+    2FA-Einrichtung gezwungen (`temp_password_active` + `is_first_login`)."""
+    if not auth.crypto_available():
+        raise HTTPException(503, "bcrypt oder PyJWT fehlen im Image")
+    username = payload.username.strip().lower()
+    if session.exec(select(User).where(User.username == username)).first():
+        raise HTTPException(409, "Benutzername bereits vergeben")
+    if payload.role not in auth.ROLES:
+        raise HTTPException(422, "Unbekannte Rolle")
+
+    temp_password = auth.generate_temp_password()
+    user = User(
+        username=username,
+        display_name=payload.display_name or payload.username,
+        password_hash=auth.hash_password(temp_password),
+        role=payload.role,
+        is_admin=auth.at_least(payload.role, "admin"),
+        aktiv=True,
+        temp_password_active=True,
+        is_first_login=True,
+        two_factor_enabled=False,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    log.info("Konto angelegt: %s (Rolle %s) durch %s", username, payload.role, actor.username)
+    read = UserRead(id=user.id, username=user.username,
+                    display_name=user.display_name or user.username,
+                    role=user.role, is_admin=user.is_admin, aktiv=user.aktiv,
+                    source="lokal", two_factor_enabled=False, is_first_login=True)
+    return UserCreateResponse(user=read, temp_password=temp_password)
 
 
 # --------------------------------------------------------------------------

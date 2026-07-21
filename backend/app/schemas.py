@@ -438,11 +438,56 @@ class UserRead(BaseModel):
     is_admin: bool = False
     aktiv: bool = True
     source: str = "lokal"        # "lokal" | "homeassistant"
+    two_factor_enabled: bool = False
+    is_first_login: bool = False
+    temp_password_active: bool = False
 
 
 class UserUpdate(BaseModel):
     role: Optional[str] = Field(None, pattern="^(guest|viewer|writer|admin)$")
     aktiv: Optional[bool] = None
+
+
+class LoginResponse(BaseModel):
+    # "SUCCESS" | "REQUIRES_2FA" | "REQUIRES_FIRST_TIME_SETUP"
+    status: str
+    needs_password_change: bool = False
+    needs_2fa_setup: bool = False
+    user: Optional[UserRead] = None
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=120,
+                          pattern=r"^[A-Za-z0-9._@-]+$")
+    display_name: Optional[str] = Field(None, max_length=120)
+    role: str = Field("viewer", pattern="^(guest|viewer|writer|admin)$")
+
+
+class UserCreateResponse(BaseModel):
+    user: UserRead
+    # Das temporäre Passwort wird dem Admin EINMALIG im Klartext zurückgegeben,
+    # damit er es weitergeben kann. Es ist nie erneut abrufbar.
+    temp_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=256)
+    new_password: str = Field(..., min_length=1, max_length=256)
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_data_uri: str
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=256)
+    code: str = Field(..., min_length=6, max_length=10)
 
 
 class AuthStatus(BaseModel):

@@ -1,13 +1,16 @@
-"""Anmeldung, Abmeldung, Ersteinrichtung."""
+"""Anmeldung, Abmeldung, Ersteinrichtung, Zwei-Faktor, Passwortwechsel."""
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlmodel import Session, select
 
-from .. import auth
+from .. import auth, twofactor
 from ..database import get_session
 from ..models import User
-from ..schemas import AuthStatus, LoginRequest, SetupRequest, UserRead, UserUpdate
+from ..schemas import (AuthStatus, ChangePasswordRequest, LoginRequest,
+                       LoginResponse, SetupRequest, TwoFactorDisableRequest,
+                       TwoFactorSetupResponse, TwoFactorVerifyRequest, UserRead,
+                       UserUpdate)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -24,7 +27,10 @@ def _to_read(user: User) -> UserRead:
                     display_name=user.display_name or user.username,
                     role=user.role, is_admin=auth.at_least(user.role, "admin"),
                     aktiv=user.aktiv,
-                    source="homeassistant" if user.external_id else "lokal")
+                    source="homeassistant" if user.external_id else "lokal",
+                    two_factor_enabled=bool(user.two_factor_enabled),
+                    is_first_login=bool(user.is_first_login),
+                    temp_password_active=bool(user.temp_password_active))
 
 
 @router.get("/status", response_model=AuthStatus)
@@ -88,7 +94,7 @@ def setup(payload: SetupRequest, response: Response, request: Request,
     return _to_read(user)
 
 
-@router.post("/login", response_model=UserRead)
+@router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, response: Response, request: Request,
           session: Session = Depends(get_session)):
     if auth.ingress_mode():
@@ -107,8 +113,33 @@ def login(payload: LoginRequest, response: Response, request: Request,
     user.letzter_login = datetime.utcnow()
     session.add(user)
     session.commit()
+
+    # Erstanmeldung: volles Cookie, aber die Middleware sperrt bis zum Abschluss
+    # des Onboardings (Passwortwechsel + 2FA) alle regulären Routen.
+    if user.is_first_login:
+        auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
+        return LoginResponse(
+            status="REQUIRES_FIRST_TIME_SETUP",
+            needs_password_change=bool(user.temp_password_active),
+            needs_2fa_setup=not bool(user.two_factor_enabled),
+        )
+
+    # Zweiter Faktor aktiv: NICHT voll anmelden, nur ein kurzlebiges
+    # Zwischentoken ausgeben. Die volle Sitzung entsteht erst nach /2fa/verify.
+    if user.two_factor_enabled:
+        auth.set_cookie(response, auth.create_token(user, session, stage=auth.STAGE_2FA),
+                        _is_secure(request))
+        return LoginResponse(status="REQUIRES_2FA")
+
     auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
-    return _to_read(user)
+    return LoginResponse(status="SUCCESS", user=_to_read(user))
+
+
+def _maybe_finish_onboarding(user: User) -> None:
+    """Onboarding gilt als abgeschlossen, sobald das temporäre Passwort ersetzt
+    UND 2FA eingerichtet ist. Dann fällt die Erstanmelde-Sperre weg."""
+    if user.is_first_login and not user.temp_password_active and user.two_factor_enabled:
+        user.is_first_login = False
 
 
 @router.post("/logout", status_code=204)
@@ -167,15 +198,107 @@ def update_user(user_id: str, payload: UserUpdate,
     return _to_read(target)
 
 
-@router.post("/password", status_code=204)
-def change_password(payload: LoginRequest, request: Request,
+@router.post("/change-password", response_model=UserRead)
+def change_password(payload: ChangePasswordRequest, request: Request,
                     user: User = Depends(auth.current_user),
                     session: Session = Depends(get_session)):
-    """Passwort ändern. `username` trägt hier das bisherige Passwort."""
+    """Eigenes Passwort ändern (Self-Service, auch als erster Onboarding-Schritt).
+
+    Prüft das bisherige Passwort und setzt die serverseitigen
+    Komplexitätsregeln durch. Im Erstanmelde-Fall wird damit zugleich das
+    temporäre Passwort entwertet."""
     if user.external_id:
         raise HTTPException(400, "Konten aus Home Assistant haben kein Passwort")
-    if not auth.verify_password(payload.username, user.password_hash):
+    if not auth.verify_password(payload.current_password, user.password_hash):
         raise HTTPException(403, "Bisheriges Passwort falsch")
-    user.password_hash = auth.hash_password(payload.password)
+    try:
+        auth.validate_password(payload.new_password, username=user.username,
+                               current_hash=user.password_hash)
+    except auth.PasswordPolicyError as exc:
+        raise HTTPException(422, str(exc))
+
+    user.password_hash = auth.hash_password(payload.new_password)
+    user.temp_password_active = False          # temporäres Passwort ist entwertet
+    _maybe_finish_onboarding(user)
     session.add(user)
     session.commit()
+    session.refresh(user)
+    return _to_read(user)
+
+
+# --------------------------------------------------------------------------
+# Zwei-Faktor-Authentifizierung (TOTP)
+# --------------------------------------------------------------------------
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+def twofactor_setup(user: User = Depends(auth.current_user),
+                    session: Session = Depends(get_session)):
+    """Erzeugt (oder erneuert, solange noch nicht aktiviert) das TOTP-Secret,
+    speichert es verschlüsselt und liefert QR-Code + otpauth-URI. Erst
+    /2fa/verify aktiviert die zweite Stufe."""
+    if user.external_id:
+        raise HTTPException(400, "Konten aus Home Assistant nutzen die HA-Anmeldung")
+    if user.two_factor_enabled:
+        raise HTTPException(409, "Zwei-Faktor ist bereits aktiv")
+    secret = twofactor.generate_secret()
+    user.two_factor_secret = twofactor.encrypt(secret)
+    session.add(user)
+    session.commit()
+    uri = twofactor.otpauth_uri(secret, user.username)
+    return TwoFactorSetupResponse(secret=secret, otpauth_uri=uri,
+                                  qr_data_uri=twofactor.qr_data_uri(uri))
+
+
+@router.post("/2fa/verify", response_model=LoginResponse)
+def twofactor_verify(payload: TwoFactorVerifyRequest, response: Response,
+                     request: Request, session: Session = Depends(get_session)):
+    """Verifiziert einen TOTP-Code. Zwei Kontexte:
+
+    - **Einrichtung** (voll angemeldet): aktiviert die zweite Stufe.
+    - **Anmeldung** (kurzlebiges 2fa-Zwischentoken): schliesst den Login ab und
+      gibt die volle Sitzung aus.
+    """
+    # Kontext 1: bereits vollwertig angemeldet -> Einrichtung abschliessen.
+    full_user = auth.resolve_user(request, session)
+    if full_user is not None:
+        secret = twofactor.decrypt(full_user.two_factor_secret)
+        if not secret:
+            raise HTTPException(409, "Kein Secret vorbereitet – zuerst /2fa/setup aufrufen")
+        if not twofactor.verify(secret, payload.code):
+            raise HTTPException(401, "Code ungültig")
+        full_user.two_factor_enabled = True
+        _maybe_finish_onboarding(full_user)
+        session.add(full_user)
+        session.commit()
+        session.refresh(full_user)
+        return LoginResponse(status="SUCCESS", user=_to_read(full_user))
+
+    # Kontext 2: Login-Zwischenschritt (nur 2fa-Zwischentoken vorhanden).
+    pending = auth.resolve_pending_2fa(request, session)
+    if pending is None:
+        raise HTTPException(401, "Keine offene Anmeldung")
+    secret = twofactor.decrypt(pending.two_factor_secret)
+    if not secret or not twofactor.verify(secret, payload.code):
+        raise HTTPException(401, "Code ungültig")
+    auth.set_cookie(response, auth.create_token(pending, session), _is_secure(request))
+    return LoginResponse(status="SUCCESS", user=_to_read(pending))
+
+
+@router.post("/2fa/disable", response_model=UserRead)
+def twofactor_disable(payload: TwoFactorDisableRequest,
+                      user: User = Depends(auth.current_user),
+                      session: Session = Depends(get_session)):
+    """Zwei-Faktor abschalten. Verlangt Passwort UND einen gültigen Code, damit
+    ein kurzzeitig unbeaufsichtigter Login das nicht heimlich tun kann."""
+    if not user.two_factor_enabled:
+        raise HTTPException(409, "Zwei-Faktor ist nicht aktiv")
+    if not auth.verify_password(payload.password, user.password_hash):
+        raise HTTPException(403, "Passwort falsch")
+    secret = twofactor.decrypt(user.two_factor_secret)
+    if not secret or not twofactor.verify(secret, payload.code):
+        raise HTTPException(401, "Code ungültig")
+    user.two_factor_enabled = False
+    user.two_factor_secret = None
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return _to_read(user)

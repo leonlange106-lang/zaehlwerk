@@ -37,3 +37,20 @@ sprechen dieselbe REST-API; nur URL/Zugang (und optional die Cloudflare-Header)
 > Erweiterungstypen. Das Add-on bleibt das Add-on; die Integration ist das neue,
 > dauerhafte Bindeglied zwischen HA und Zählwerk – unabhängig davon, wo das
 > Backend läuft.
+
+## Zwei-Faktor-Secrets beim Wiederherstellen
+
+Die TOTP-Secrets (2FA) liegen verschlüsselt in der Datenbank; der Schlüssel
+liegt bewusst **außerhalb** der DB in `zaehlwerk.key` (neben der DB-Datei, bzw.
+in der Umgebungsvariable `ZAEHLWERK_SECRET_KEY`). Grund: DB-Sicherungen werden
+exportiert – läge der Schlüssel darin, wäre die Verschlüsselung wertlos.
+
+Folgen:
+
+- **Gleiche Instanz** (Update/Rebuild, gleiches `/data`-Volume): der Schlüssel
+  bleibt, 2FA funktioniert unverändert weiter.
+- **Wiederherstellung auf einer *fremden* Instanz** (anderer Schlüssel): die
+  alten Secrets lassen sich nicht entschlüsseln – die betroffenen Nutzer richten
+  ihre 2FA einmalig neu ein. Wer das vermeiden will, sichert `zaehlwerk.key`
+  zusammen mit der DB und legt ihn auf der Zielinstanz an derselben Stelle ab
+  (dann aber getrennt vom DB-Backup aufbewahren).

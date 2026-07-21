@@ -1343,6 +1343,20 @@ html { scrollbar-gutter: stable; }
 .auth-card .field { margin-top: 16px; }
 .auth-submit { width: 100%; justify-content: center; margin-top: 22px; min-height: 48px; }
 .auth-err { margin-top: 12px; }
+/* Onboarding-Schritte + 2FA-QR (fügt sich ins bestehende Auth-Karten-Styling) */
+.ob-steps { display: flex; gap: 10px; margin: 18px 0 6px; font-size: 12px; }
+.ob-steps span { flex: 1; text-align: center; padding: 8px 6px; border-radius: 10px;
+  background: var(--md-surface-c); color: var(--md-on-surface-variant);
+  border: 1px solid var(--md-outline-variant); }
+.ob-steps span.active { background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container); border-color: transparent; }
+.ob-steps span.done { color: var(--md-primary); }
+.twofa-qr-wrap { display: flex; justify-content: center; margin: 16px 0 8px; }
+/* Weisser Grund unabhängig vom Theme, damit der QR-Code stets scanbar bleibt. */
+.twofa-qr { width: 200px; height: 200px; background: #fff; border-radius: 12px; padding: 8px; }
+.twofa-secret { user-select: all; word-break: break-all; }
+.temp-pw-box { margin-top: 8px; padding: 10px 12px; background: var(--md-surface);
+  border: 1px solid var(--md-outline-variant); border-radius: 8px; font-size: 15px; letter-spacing: .5px; }
 
 .role-select { min-width: 150px; font-size: 13px; padding: 6px 10px; }
 .info-table td .role-select { margin: 0; }

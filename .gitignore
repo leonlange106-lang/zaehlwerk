@@ -5,6 +5,10 @@ __pycache__/
 *.db-shm
 *.db-wal
 backend/data/
+# Verschlüsselungsschlüssel für TOTP-Secrets – wird zur Laufzeit erzeugt,
+# gehört NIE ins Repo.
+*.key
+zaehlwerk.key
 .env
 .venv/
 venv/

@@ -247,6 +247,27 @@ def _m010_grundpreis_yearly(conn: Connection) -> None:
         "UPDATE tariffs SET grundpreis = grundpreis * 12 WHERE grundpreis IS NOT NULL"))
 
 
+# --------------------------------------------------------------------------
+# Migration 11: Zwei-Faktor und Erstanmelde-Zwang an users
+# --------------------------------------------------------------------------
+def _m011_two_factor(conn: Connection) -> None:
+    """Spalten für TOTP-Zwei-Faktor und den Erstanmelde-Flow.
+
+    Bestandskonten bleiben unangetastet: alle Flags starten auf 0/NULL, es gibt
+    also keinen rückwirkenden 2FA- oder Passwortwechsel-Zwang. Neu vom Admin
+    angelegte Konten setzen die Flags selbst.
+    """
+    cols = _columns(conn, "users")
+    if "two_factor_secret" not in cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN two_factor_secret TEXT"))
+    if "two_factor_enabled" not in cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN NOT NULL DEFAULT 0"))
+    if "temp_password_active" not in cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN temp_password_active BOOLEAN NOT NULL DEFAULT 0"))
+    if "is_first_login" not in cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN is_first_login BOOLEAN NOT NULL DEFAULT 0"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -258,6 +279,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (8, "audit_logs-Tabelle samt Unveraenderlichkeit anlegen", _m008_audit),
     (9, "meter_start-Spalte an readings ergaenzen", _m009_meter_start),
     (10, "grundpreis von Monats- auf Jahresbetrag umstellen", _m010_grundpreis_yearly),
+    (11, "Zwei-Faktor und Erstanmelde-Zwang an users", _m011_two_factor),
 ]
 
 

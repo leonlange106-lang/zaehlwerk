@@ -122,6 +122,17 @@ class User(SQLModel, table=True):
     dashboard_layout: Optional[str] = None
     letzter_login: Optional[datetime] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+    # Zwei-Faktor (TOTP). Das Secret liegt Fernet-verschlüsselt (Schlüssel
+    # ausserhalb der DB, siehe app/twofactor.py); `two_factor_enabled` wird erst
+    # nach erfolgreicher Verifikation des ersten Codes gesetzt.
+    two_factor_secret: Optional[str] = None
+    two_factor_enabled: bool = False
+    # Erstanmelde-Zwang: Ein vom Admin angelegtes Konto startet mit einem
+    # temporären Passwort (`temp_password_active`) und muss beim ersten Login
+    # Passwort ändern UND 2FA einrichten (`is_first_login`), bevor die regulären
+    # Routen freigegeben werden.
+    temp_password_active: bool = False
+    is_first_login: bool = False
 
 
 class Tariff(SQLModel, table=True):

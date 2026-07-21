@@ -85,6 +85,13 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     # Verfahren die Rolle Schreiber – ein Leser könnte seine eigene Startseite
     # dann nicht einrichten.
     ("/api/user/dashboard", None,        "guest"),
+    # Eigene Zugangsdaten verwalten: jedes angemeldete Konto (auch Gast/Leser)
+    # darf sein Passwort ändern und die eigene 2FA einrichten/abschalten. Ohne
+    # diese Ausnahmen verlangte die Grundregel für schreibende Verfahren die
+    # Rolle Schreiber – und das erzwungene Onboarding eines Leser-Kontos liefe
+    # sofort in eine Sackgasse.
+    ("/api/auth/change-password", None,  "guest"),
+    ("/api/auth/2fa",     None,          "guest"),
     # Konten und Rollen ändern: ausschließlich Administratoren
     ("/api/auth/users",   None,          "admin"),
     # Betriebsparameter, Sicherungen, Broker, externe Dienste
@@ -129,12 +136,28 @@ def permissions(role: str) -> dict:
 
 # Diese Pfade sind ohne Anmeldung erreichbar. Bewusst kurz gehalten:
 # Statusabfrage, Anmeldung, Ersteinrichtung, Health-Check.
+# /2fa/verify ist öffentlich, weil es die zweite Login-Stufe abschliesst
+# (der Nutzer hält dabei nur ein 2fa-Zwischentoken, keine volle Sitzung) – die
+# Autorisierung macht der Endpunkt selbst.
 PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/status",
     "/api/auth/login",
     "/api/auth/setup",
     "/api/auth/logout",
+    "/api/auth/2fa/verify",
+}
+
+# Während des erzwungenen Onboardings (is_first_login) sind NUR diese Pfade
+# erreichbar. Alles andere wird von der Middleware mit 403 und dem Status
+# REQUIRES_FIRST_TIME_SETUP abgewiesen, bis Passwortwechsel und 2FA erledigt sind.
+ONBOARDING_ALLOWED = {
+    "/api/auth/status",
+    "/api/auth/me",
+    "/api/auth/logout",
+    "/api/auth/change-password",
+    "/api/auth/2fa/setup",
+    "/api/auth/2fa/verify",
 }
 
 
@@ -213,6 +236,37 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 # --------------------------------------------------------------------------
+# Passwort-Richtlinie und temporäre Passwörter
+# --------------------------------------------------------------------------
+MIN_PASSWORD_LENGTH = 12
+
+
+class PasswordPolicyError(ValueError):
+    """Ein Passwort erfüllt die serverseitigen Regeln nicht."""
+
+
+def validate_password(password: str, *, username: Optional[str] = None,
+                      current_hash: Optional[str] = None) -> None:
+    """Serverseitige Komplexitätsregeln – wirft PasswordPolicyError mit einer
+    für die Oberfläche geeigneten Meldung. Philosophie wie bei der
+    Ersteinrichtung: Länge wirkt stärker als erzwungene Sonderzeichen."""
+    if not password or len(password) < MIN_PASSWORD_LENGTH:
+        raise PasswordPolicyError(f"Mindestens {MIN_PASSWORD_LENGTH} Zeichen erforderlich")
+    if username and password.strip().lower() == username.strip().lower():
+        raise PasswordPolicyError("Passwort darf nicht dem Benutzernamen entsprechen")
+    if current_hash and verify_password(password, current_hash):
+        raise PasswordPolicyError("Neues Passwort muss sich vom bisherigen unterscheiden")
+
+
+def generate_temp_password(length: int = 16) -> str:
+    """Sicheres Zufallspasswort für neu angelegte Konten. Zeichensatz ohne
+    leicht verwechselbare Zeichen (0/O, 1/l/I), damit es sich verlässlich
+    ablesen und weitergeben lässt."""
+    alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+# --------------------------------------------------------------------------
 # Schlüssel
 # --------------------------------------------------------------------------
 def _secret(session: Session) -> str:
@@ -240,17 +294,29 @@ def rotate_secret(session: Session) -> None:
 # --------------------------------------------------------------------------
 # Token
 # --------------------------------------------------------------------------
-def create_token(user: User, session: Session) -> str:
+# Stufe eines Tokens: "full" = vollwertige Sitzung; "2fa" = nur die zweite
+# Anmeldestufe ist noch offen (kurzlebig, erlaubt ausschliesslich 2fa/verify).
+STAGE_FULL = "full"
+STAGE_2FA = "2fa"
+PENDING_2FA_TTL_MINUTES = 5
+
+
+def create_token(user: User, session: Session, *, stage: str = STAGE_FULL) -> str:
     jwt = _jwt()
     if jwt is None:
         raise RuntimeError("PyJWT ist nicht installiert")
     now = datetime.now(timezone.utc)
+    if stage == STAGE_FULL:
+        exp = now + timedelta(hours=TOKEN_TTL_HOURS)
+    else:
+        exp = now + timedelta(minutes=PENDING_2FA_TTL_MINUTES)
     payload = {
         "sub": user.id,
         "name": user.username,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(hours=TOKEN_TTL_HOURS)).timestamp()),
+        "exp": int(exp.timestamp()),
         "jti": secrets.token_hex(8),
+        "stg": stage,
     }
     return jwt.encode(payload, _secret(session), algorithm=ALGORITHM)
 
@@ -380,6 +446,30 @@ def resolve_user(request: Request, session: Session) -> Optional[User]:
 
     payload = decode_token(token, session)
     if not payload:
+        return None
+    # Nur vollwertige Sitzungen zählen als angemeldet. Ein "2fa"-Zwischentoken
+    # (zweite Stufe noch offen) darf keine regulären Routen freischalten – es
+    # wird ausschliesslich von /api/auth/2fa/verify ausgewertet.
+    if payload.get("stg", STAGE_FULL) != STAGE_FULL:
+        return None
+    user = session.get(User, payload.get("sub"))
+    if not user or not user.aktiv:
+        return None
+    return user
+
+
+def resolve_pending_2fa(request: Request, session: Session) -> Optional[User]:
+    """Nutzer aus einem kurzlebigen 2fa-Zwischentoken (nach Passwort-Prüfung,
+    vor der Code-Eingabe). Nur für /api/auth/2fa/verify im Login-Kontext."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        header = request.headers.get("authorization") or ""
+        if header.lower().startswith("bearer "):
+            token = header[7:].strip()
+    if not token:
+        return None
+    payload = decode_token(token, session)
+    if not payload or payload.get("stg") != STAGE_2FA:
         return None
     user = session.get(User, payload.get("sub"))
     if not user or not user.aktiv:

@@ -84,6 +84,15 @@ async def auth_middleware(request: Request, call_next):
     if user is None:
         return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
 
+    # ---------- Erstanmelde-Zwang ----------
+    # Solange das Onboarding (Passwortwechsel + 2FA) nicht abgeschlossen ist,
+    # bleibt der Zugriff auf alles ausser den Onboarding-Routen gesperrt.
+    if getattr(user, "is_first_login", False) and path not in auth_mod.ONBOARDING_ALLOWED:
+        return JSONResponse(
+            {"detail": "Erstanmeldung erforderlich", "status": "REQUIRES_FIRST_TIME_SETUP"},
+            status_code=403,
+        )
+
     # ---------- Autorisierung ----------
     # Die Prüfung sitzt bewusst hier und nicht in den einzelnen Routen: eine
     # neue Route ist damit automatisch abgedeckt, statt erst durch eine

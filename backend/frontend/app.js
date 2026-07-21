@@ -4,8 +4,13 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.23.0";
+const APP_VERSION = "3.24.0";
 const APP_CHANGELOG = [
+  { v: "3.24.0", d: "21.07.2026", items: [
+    "Zwei-Faktor-Authentifizierung (TOTP): in den Einstellungen unter „Zwei-Faktor“ einrichten (QR-Code für Google/Microsoft Authenticator, Apple Passwörter u. a.). Ist sie aktiv, verlangt jede Anmeldung zusätzlich einen 6-stelligen Code",
+    "Passwort ändern: in den Einstellungen unter „Passwort ändern“ – mit Prüfung des bisherigen Passworts und serverseitigen Komplexitätsregeln",
+    "Benutzerverwaltung: Administratoren können unter Admin-Tools → Zugriff neue Konten anlegen. Das System vergibt ein sicheres temporäres Passwort; der neue Nutzer wird beim ersten Login zwingend zu Passwortwechsel und 2FA-Einrichtung geführt, bevor er Zugriff erhält",
+  ]},
   { v: "3.23.0", d: "21.07.2026", items: [
     "Selbst-Update für den eigenständigen Betrieb (Admin-Tools → Update): zeigt die installierte und die auf GitHub verfügbare Version, prüft im Hintergrund und auf Knopfdruck, und stößt Update bzw. Rückkehr zur Vorversion an. Aus Sicherheitsgründen führt die App selbst keine Befehle aus – ein kleines Host-Skript auf dem Server erledigt das; vor jedem Vorgang wird automatisch eine Sicherung erstellt. Unter Home Assistant kommen Updates weiterhin über den Add-on-Store, dort ist die Funktion ausgeblendet",
   ]},
@@ -2552,6 +2557,15 @@ createApp({
     authForm: { username: "", display_name: "", password: "", password2: "" },
     authError: null,
     authBusy: false,
+    /* Login-Zwischenschritt zweiter Faktor + Onboarding-Assistent */
+    loginStage: null,          // null | "2fa"
+    twofaCode: "",
+    ob: { currentPw: "", newPw: "", newPw2: "", setup: null, code: "", error: null },
+    /* Eigenes Konto (Einstellungen): Passwortwechsel + 2FA */
+    pwForm: { current: "", next: "", next2: "", error: null, busy: false },
+    twofa: { setup: null, code: "", disablePw: "", disableCode: "", error: null, busy: false, mode: null },
+    /* Admin: Benutzer anlegen */
+    newUser: { username: "", display_name: "", role: "viewer", error: null, busy: false, created: null },
     users: [],
     dashTiles: [],
     dashData: [],
@@ -2655,6 +2669,19 @@ createApp({
       const s = this.auth.status;
       return !!(this.auth.checked && s && !s.authenticated);
     },
+    /* Erstanmelde-Zwang: angemeldet, aber Onboarding (Passwort + 2FA) offen.
+       Der Assistent überlagert die App, bis beide Schritte erledigt sind. */
+    onboardingNeeded() {
+      const u = (this.auth.status || {}).user;
+      return !!(this.auth.checked && this.auth.status
+                && this.auth.status.authenticated && u && u.is_first_login);
+    },
+    obStep() {
+      const u = (this.auth.status || {}).user || {};
+      if (u.temp_password_active) return 1;      // erst Passwort ersetzen
+      if (!u.two_factor_enabled) return 2;       // dann 2FA einrichten
+      return 3;
+    },
     currentUser() { return (this.auth.status || {}).user || null; },
     authRoles() { return (this.auth.status || {}).roles || []; },
     /* Einzige Quelle für die Sichtbarkeit im UI. Sie kommt vom Server, damit
@@ -2726,7 +2753,7 @@ createApp({
     this.applyNavClass();
     window.addEventListener("keydown", this.onNavKey);
     window.addEventListener("resize", this.onNavResize);
-    if (await this.checkAuth()) {
+    if (await this.checkAuth() && !this.onboardingNeeded) {
       await this.load();
       // Auf schmalen Geräten die kompakte Startseite, sonst die Systemliste.
       if (this.isMobileViewport()) this.openMobileHome();
@@ -2795,15 +2822,82 @@ createApp({
     async doLogin() {
       this.authBusy = true; this.authError = null;
       try {
-        await api("/api/auth/login", {
+        const r = await api("/api/auth/login", {
           method: "POST",
           body: JSON.stringify({ username: this.authForm.username.trim(),
                                  password: this.authForm.password }),
         });
+        if (r.status === "REQUIRES_2FA") {
+          // Zweite Stufe: Passwort war korrekt, jetzt der Code.
+          this.loginStage = "2fa"; this.twofaCode = "";
+          this.authForm.password = "";
+          return;
+        }
+        if (r.status === "REQUIRES_FIRST_TIME_SETUP") {
+          // Temp-Passwort für den ersten Onboarding-Schritt merken.
+          this.ob = { currentPw: this.authForm.password, newPw: "", newPw2: "",
+                      setup: null, code: "", error: null };
+          this.authForm.password = "";
+          await this.checkAuth();          // lädt user mit is_first_login -> Assistent
+          return;
+        }
         this.authForm = { username: "", display_name: "", password: "", password2: "" };
         await this.checkAuth();
         await this.load();
       } catch (e) { this.authError = e.message; }
+      finally { this.authBusy = false; }
+    },
+    /* Login-Zwischenschritt: TOTP-Code prüfen -> volle Sitzung. */
+    async doLogin2fa() {
+      this.authBusy = true; this.authError = null;
+      try {
+        await api("/api/auth/2fa/verify", {
+          method: "POST", body: JSON.stringify({ code: this.twofaCode.trim() }),
+        });
+        this.loginStage = null; this.twofaCode = "";
+        this.authForm = { username: "", display_name: "", password: "", password2: "" };
+        await this.checkAuth();
+        await this.load();
+      } catch (e) { this.authError = e.message; }
+      finally { this.authBusy = false; }
+    },
+    cancelLogin() {
+      // Zurück zur Anmeldemaske (Zwischentoken verwerfen).
+      this.loginStage = null; this.twofaCode = "";
+      this.doLogout();
+    },
+    /* ---------- Onboarding-Assistent ---------- */
+    async obSubmitPassword() {
+      this.ob.error = null;
+      if (this.ob.newPw.length < 12) { this.ob.error = "Mindestens 12 Zeichen"; return; }
+      if (this.ob.newPw !== this.ob.newPw2) { this.ob.error = "Passwörter stimmen nicht überein"; return; }
+      this.authBusy = true;
+      try {
+        await api("/api/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify({ current_password: this.ob.currentPw, new_password: this.ob.newPw }),
+        });
+        this.ob.currentPw = ""; this.ob.newPw = ""; this.ob.newPw2 = "";
+        await this.checkAuth();          // temp_password_active -> false, Schritt 2
+      } catch (e) { this.ob.error = e.message; }
+      finally { this.authBusy = false; }
+    },
+    async obStart2fa() {
+      this.ob.error = null; this.authBusy = true;
+      try { this.ob.setup = await api("/api/auth/2fa/setup", { method: "POST" }); }
+      catch (e) { this.ob.error = e.message; }
+      finally { this.authBusy = false; }
+    },
+    async obVerify2fa() {
+      this.ob.error = null; this.authBusy = true;
+      try {
+        await api("/api/auth/2fa/verify", {
+          method: "POST", body: JSON.stringify({ code: this.ob.code.trim() }),
+        });
+        this.ob = { currentPw: "", newPw: "", newPw2: "", setup: null, code: "", error: null };
+        await this.checkAuth();          // is_first_login -> false, Assistent schliesst
+        await this.load();
+      } catch (e) { this.ob.error = e.message; }
       finally { this.authBusy = false; }
     },
     async doSetup() {
@@ -2825,6 +2919,77 @@ createApp({
     async doLogout() {
       try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
       await this.checkAuth();
+    },
+
+    /* ---------- Eigenes Konto: Passwort & Zwei-Faktor ---------- */
+    async changeOwnPassword() {
+      this.pwForm.error = null;
+      if (this.pwForm.next.length < 12) { this.pwForm.error = "Mindestens 12 Zeichen"; return; }
+      if (this.pwForm.next !== this.pwForm.next2) { this.pwForm.error = "Passwörter stimmen nicht überein"; return; }
+      this.pwForm.busy = true;
+      try {
+        await api("/api/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify({ current_password: this.pwForm.current, new_password: this.pwForm.next }),
+        });
+        this.pwForm = { current: "", next: "", next2: "", error: null, busy: false };
+        this.notify("Passwort geändert", "ok");
+      } catch (e) { this.pwForm.error = e.message; }
+      finally { this.pwForm.busy = false; }
+    },
+    async twofaStartSetup() {
+      this.twofa.error = null; this.twofa.busy = true;
+      try {
+        this.twofa.setup = await api("/api/auth/2fa/setup", { method: "POST" });
+        this.twofa.mode = "setup"; this.twofa.code = "";
+      } catch (e) { this.twofa.error = e.message; }
+      finally { this.twofa.busy = false; }
+    },
+    async twofaConfirm() {
+      this.twofa.error = null; this.twofa.busy = true;
+      try {
+        await api("/api/auth/2fa/verify", {
+          method: "POST", body: JSON.stringify({ code: this.twofa.code.trim() }),
+        });
+        this.twofa = { setup: null, code: "", disablePw: "", disableCode: "", error: null, busy: false, mode: null };
+        await this.checkAuth();
+        this.notify("Zwei-Faktor aktiviert", "ok");
+      } catch (e) { this.twofa.error = e.message; }
+      finally { this.twofa.busy = false; }
+    },
+    async twofaDisable() {
+      this.twofa.error = null; this.twofa.busy = true;
+      try {
+        await api("/api/auth/2fa/disable", {
+          method: "POST",
+          body: JSON.stringify({ password: this.twofa.disablePw, code: this.twofa.disableCode.trim() }),
+        });
+        this.twofa = { setup: null, code: "", disablePw: "", disableCode: "", error: null, busy: false, mode: null };
+        await this.checkAuth();
+        this.notify("Zwei-Faktor deaktiviert", "ok");
+      } catch (e) { this.twofa.error = e.message; }
+      finally { this.twofa.busy = false; }
+    },
+    /* ---------- Admin: Benutzer anlegen ---------- */
+    async adminCreateUser() {
+      this.newUser.error = null; this.newUser.created = null;
+      if (this.newUser.username.trim().length < 3) { this.newUser.error = "Benutzername zu kurz (min. 3)"; return; }
+      this.newUser.busy = true;
+      try {
+        const r = await api("/api/admin/users/create", {
+          method: "POST",
+          body: JSON.stringify({
+            username: this.newUser.username.trim(),
+            display_name: this.newUser.display_name.trim() || null,
+            role: this.newUser.role,
+          }),
+        });
+        // Temp-Passwort einmalig anzeigen; danach ist es nicht mehr abrufbar.
+        this.newUser.created = { username: r.user.username, temp_password: r.temp_password };
+        this.newUser.username = ""; this.newUser.display_name = ""; this.newUser.role = "viewer";
+        this.loadUsers();
+      } catch (e) { this.newUser.error = e.message; }
+      finally { this.newUser.busy = false; }
     },
 
     /* ---------- Mobile Bottom Sheet ---------- */
@@ -4432,6 +4597,30 @@ createApp({
           <div class="hint" v-else>Konten erscheinen, sobald sie sich erstmals angemeldet haben.</div>
         </div>
 
+        <div class="card set-card">
+          <h3>Benutzer anlegen</h3>
+          <p class="hint">Legt ein Konto mit einem sicheren temporären Passwort an. Der Nutzer
+            wird beim ersten Login zwingend zu Passwortwechsel und Zwei-Faktor-Einrichtung geführt.</p>
+          <div class="field"><label>Benutzername</label>
+            <input class="input" v-model="newUser.username" autocomplete="off" placeholder="z. B. anna.muster" /></div>
+          <div class="field"><label>Anzeigename (optional)</label>
+            <input class="input" v-model="newUser.display_name" /></div>
+          <div class="field"><label>Rolle</label>
+            <select class="select" v-model="newUser.role">
+              <option v-for="r in authRoles" :key="r.key" :value="r.key">{{ r.label }} – {{ r.hint }}</option>
+            </select></div>
+          <div class="err-inline" v-if="newUser.error">{{ newUser.error }}</div>
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="newUser.busy || newUser.username.trim().length < 3"
+                    @click="adminCreateUser">{{ newUser.busy ? 'Legt an …' : 'Benutzer anlegen' }}</button>
+          </div>
+          <div class="ks-note hint" v-if="newUser.created">
+            <strong>Konto „{{ newUser.created.username }}“ angelegt.</strong>
+            Temporäres Passwort – <strong>nur jetzt sichtbar</strong>, bitte sicher weitergeben:
+            <div class="temp-pw-box"><code class="twofa-secret">{{ newUser.created.temp_password }}</code></div>
+          </div>
+        </div>
+
         <div class="save-bar" :class="{ dirty: settingsDirty(), invalid: settingsErrorCount() > 0 }"
              v-if="appSettingsDraft">
           <div class="sb-info">
@@ -4814,6 +5003,78 @@ createApp({
           </div>
         </div>
 
+        <div class="card set-card" v-if="currentUser && currentUser.source !== 'homeassistant'">
+          <h3>Passwort ändern</h3>
+          <div class="field"><label>Aktuelles Passwort</label>
+            <input class="input" type="password" v-model="pwForm.current" autocomplete="current-password" /></div>
+          <div class="field"><label>Neues Passwort</label>
+            <input class="input" type="password" v-model="pwForm.next" autocomplete="new-password" />
+            <div class="hint">Mindestens 12 Zeichen. Länge wirkt stärker als Sonderzeichen.</div></div>
+          <div class="field"><label>Neues Passwort wiederholen</label>
+            <input class="input" type="password" v-model="pwForm.next2" autocomplete="new-password"
+                   @keyup.enter="changeOwnPassword" />
+            <div class="err-inline" v-if="pwForm.next2 && pwForm.next2 !== pwForm.next">Stimmt nicht überein</div></div>
+          <div class="err-inline" v-if="pwForm.error">{{ pwForm.error }}</div>
+          <div class="settings-actions">
+            <button class="btn btn-primary" :disabled="pwForm.busy || !pwForm.current || !pwForm.next"
+                    @click="changeOwnPassword">{{ pwForm.busy ? 'Speichert …' : 'Passwort ändern' }}</button>
+          </div>
+        </div>
+
+        <div class="card set-card" v-if="currentUser && currentUser.source !== 'homeassistant'">
+          <h3>Zwei-Faktor-Authentifizierung</h3>
+          <p class="hint" v-if="currentUser.two_factor_enabled">
+            <strong>Aktiv.</strong> Bei jeder Anmeldung wird zusätzlich ein Code aus deiner
+            Authenticator-App verlangt.</p>
+          <p class="hint" v-else>Ein zweiter Faktor (TOTP) schützt dein Konto zusätzlich zum
+            Passwort – kompatibel mit Google/Microsoft Authenticator, Apple Passwörter u. a.</p>
+
+          <!-- Aktiv: Deaktivieren mit Passwort + Code -->
+          <template v-if="currentUser.two_factor_enabled">
+            <template v-if="twofa.mode !== 'disable'">
+              <div class="settings-actions">
+                <button class="btn" @click="twofa.mode='disable'; twofa.error=null">Deaktivieren</button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="field"><label>Passwort</label>
+                <input class="input" type="password" v-model="twofa.disablePw" autocomplete="current-password" /></div>
+              <div class="field"><label>Aktueller Code aus der App</label>
+                <input class="input" v-model="twofa.disableCode" inputmode="numeric" autocomplete="one-time-code" /></div>
+              <div class="err-inline" v-if="twofa.error">{{ twofa.error }}</div>
+              <div class="settings-actions">
+                <button class="btn" @click="twofa.mode=null; twofa.error=null">Abbrechen</button>
+                <button class="btn btn-primary" :disabled="twofa.busy || !twofa.disablePw || !twofa.disableCode"
+                        @click="twofaDisable">Zwei-Faktor deaktivieren</button>
+              </div>
+            </template>
+          </template>
+
+          <!-- Inaktiv: Einrichten -->
+          <template v-else>
+            <template v-if="!twofa.setup">
+              <div class="err-inline" v-if="twofa.error">{{ twofa.error }}</div>
+              <div class="settings-actions">
+                <button class="btn btn-primary" :disabled="twofa.busy" @click="twofaStartSetup">
+                  {{ twofa.busy ? 'Erzeugt …' : 'Einrichten' }}</button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="twofa-qr-wrap"><img class="twofa-qr" :src="twofa.setup.qr_data_uri" alt="2FA-QR-Code" /></div>
+              <p class="hint">QR-Code scannen – oder Schlüssel manuell eingeben:
+                <code class="twofa-secret">{{ twofa.setup.secret }}</code></p>
+              <div class="field"><label>6-stelliger Code aus der App</label>
+                <input class="input" v-model="twofa.code" inputmode="numeric"
+                       autocomplete="one-time-code" @keyup.enter="twofaConfirm" /></div>
+              <div class="err-inline" v-if="twofa.error">{{ twofa.error }}</div>
+              <div class="settings-actions">
+                <button class="btn" @click="twofa.setup=null; twofa.error=null">Abbrechen</button>
+                <button class="btn btn-primary" :disabled="twofa.busy || !twofa.code" @click="twofaConfirm">Aktivieren</button>
+              </div>
+            </template>
+          </template>
+        </div>
+
         <div class="card set-card">
           <h3>Darstellung</h3>
           <p class="hint">Gerätelokal in diesem Browser gespeichert, kein Serverzugriff.</p>
@@ -4935,11 +5196,76 @@ createApp({
   </div>
 
   <!-- ANMELDUNG / ERSTEINRICHTUNG -->
-  <div class="auth-gate" v-if="authNeeded">
+  <div class="auth-gate" v-if="authNeeded || onboardingNeeded">
     <div class="auth-card">
       <div class="auth-brand">◷ Zählwerk</div>
 
-      <template v-if="auth.status && auth.status.setup_required">
+      <!-- ERZWUNGENES ONBOARDING (Passwort + 2FA) -->
+      <template v-if="onboardingNeeded">
+        <h2>Konto einrichten</h2>
+        <p class="hint">Dein Konto wurde von einem Administrator mit einem temporären
+          Passwort angelegt. Zur Freischaltung sind zwei Schritte nötig.</p>
+        <div class="ob-steps">
+          <span :class="{done: obStep > 1, active: obStep === 1}">1 · Passwort</span>
+          <span :class="{done: obStep > 2, active: obStep === 2}">2 · Zwei-Faktor</span>
+        </div>
+
+        <template v-if="obStep === 1">
+          <div class="field"><label>Neues Passwort</label>
+            <input class="input" type="password" v-model="ob.newPw"
+                   autocomplete="new-password" @keyup.enter="obSubmitPassword" />
+            <div class="hint">Mindestens 12 Zeichen. Länge wirkt stärker als Sonderzeichen.</div>
+          </div>
+          <div class="field"><label>Passwort wiederholen</label>
+            <input class="input" type="password" v-model="ob.newPw2"
+                   autocomplete="new-password" @keyup.enter="obSubmitPassword" /></div>
+          <div class="err-inline auth-err" v-if="ob.error">{{ ob.error }}</div>
+          <button class="btn btn-primary auth-submit" :disabled="authBusy" @click="obSubmitPassword">
+            {{ authBusy ? 'Speichert …' : 'Passwort setzen' }}
+          </button>
+        </template>
+
+        <template v-else-if="obStep === 2">
+          <template v-if="!ob.setup">
+            <p class="hint">Richte einen zweiten Faktor mit einer Authenticator-App ein
+              (Google/Microsoft Authenticator, Apple Passwörter u. a.).</p>
+            <div class="err-inline auth-err" v-if="ob.error">{{ ob.error }}</div>
+            <button class="btn btn-primary auth-submit" :disabled="authBusy" @click="obStart2fa">
+              {{ authBusy ? 'Erzeugt …' : 'QR-Code anzeigen' }}
+            </button>
+          </template>
+          <template v-else>
+            <div class="twofa-qr-wrap"><img class="twofa-qr" :src="ob.setup.qr_data_uri" alt="2FA-QR-Code" /></div>
+            <p class="hint">QR-Code scannen – oder Schlüssel manuell eingeben:
+              <code class="twofa-secret">{{ ob.setup.secret }}</code></p>
+            <div class="field"><label>6-stelliger Code aus der App</label>
+              <input class="input" v-model="ob.code" inputmode="numeric"
+                     autocomplete="one-time-code" @keyup.enter="obVerify2fa" /></div>
+            <div class="err-inline auth-err" v-if="ob.error">{{ ob.error }}</div>
+            <button class="btn btn-primary auth-submit" :disabled="authBusy || !ob.code" @click="obVerify2fa">
+              {{ authBusy ? 'Prüft …' : 'Aktivieren & fertig' }}
+            </button>
+          </template>
+        </template>
+
+        <button class="btn auth-submit" @click="doLogout">Abmelden</button>
+      </template>
+
+      <!-- LOGIN: ZWEITE STUFE (2FA) -->
+      <template v-else-if="loginStage === '2fa'">
+        <h2>Bestätigung</h2>
+        <p class="hint">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
+        <div class="field"><label>Code</label>
+          <input class="input" v-model="twofaCode" inputmode="numeric"
+                 autocomplete="one-time-code" @keyup.enter="doLogin2fa" /></div>
+        <div class="err-inline auth-err" v-if="authError">{{ authError }}</div>
+        <button class="btn btn-primary auth-submit" :disabled="!twofaCode || authBusy" @click="doLogin2fa">
+          {{ authBusy ? 'Prüft …' : 'Bestätigen' }}
+        </button>
+        <button class="btn auth-submit" @click="cancelLogin">Abbrechen</button>
+      </template>
+
+      <template v-else-if="auth.status && auth.status.setup_required">
         <h2>{{ auth.status.recovery ? 'Administrator-Konto einrichten' : 'Erstes Konto anlegen' }}</h2>
         <p class="hint" v-if="auth.status.recovery">Die eingespielte Sicherung stammt
           aus einem Home-Assistant-Add-on – die enthaltenen Konten haben dort kein
