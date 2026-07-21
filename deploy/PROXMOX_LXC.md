@@ -31,8 +31,12 @@ Debians Paketquellen – ein Paket namens `docker-compose-plugin` existiert dort
 nicht (`E: Unable to locate package docker-compose-plugin`, falls doch
 versucht):
 
+Minimale Debian-12-LXC-Templates bringen `curl` nicht mit (`get.docker.com`
+scheitert sonst sofort mit `curl: command not found`):
+
 ```sh
 apt update
+apt install -y curl
 curl -fsSL https://get.docker.com | sh
 apt install -y git
 git clone https://github.com/leonlange106-lang/zaehlwerk.git
