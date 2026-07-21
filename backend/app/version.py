@@ -5,4 +5,4 @@ beiden ziehen sie ab jetzt von hier, damit sie nicht mehr auseinanderlaufen
 können - genau das war beim Export-Kopf zuletzt fast passiert.
 """
 
-APP_VERSION = "3.22.4"
+APP_VERSION = "3.22.5"

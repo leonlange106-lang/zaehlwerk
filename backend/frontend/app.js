@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.4";
+const APP_VERSION = "3.22.5";
 const APP_CHANGELOG = [
+  { v: "3.22.5", d: "21.07.2026", items: [
+    "Die Versionsnummer wird jetzt auch bei eingeklappter Seitenleiste unten links angezeigt (Desktop) – vorher war sie nur im ausgeklappten Zustand sichtbar",
+  ]},
   { v: "3.22.4", d: "21.07.2026", items: [
     "Kritischer Fix (Aussperrung): das Einspielen einer Home-Assistant-Sicherung in eine eigenständig laufende Instanz sperrte bisher komplett aus – die aus Home Assistant übernommenen Konten haben dort kein Passwort (die Anmeldung läuft über HA), und die eigenständige Instanz bot dennoch keine Ersteinrichtung an. Jetzt erkennt Zählwerk, dass kein anmeldbares Konto existiert, und bietet die Einrichtung eines Administrator-Kontos an; ein gleichnamiges bestehendes Konto wird dabei übernommen",
     "Kritischer Fix: nach einer Wiederherstellung aus einer Sicherung (Admin-Tools → Datenmanagement) meldete die Oberfläche fälschlich „Wiederherstellung fehlgeschlagen“, obwohl sie erfolgreich war – Ursache war ein durch die neue Datenbank ungültig gewordenes Sitzungscookie, dessen Folgefehler als Fehlschlag missverstanden wurde. Die Wiederherstellung führt jetzt sauber zur Anmeldemaske mit dem Hinweis, sich mit den Zugangsdaten aus der Sicherung neu anzumelden",
