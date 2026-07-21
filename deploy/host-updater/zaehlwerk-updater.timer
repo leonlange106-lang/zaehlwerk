@@ -1,0 +1,15 @@
+[Unit]
+Description=Zählwerk Host-Updater regelmäßig prüfen lassen
+
+[Timer]
+# Kurz nach dem Boot einmal, danach jede Minute. Der Service beendet sich
+# sofort, wenn keine Anforderung vorliegt - die eigentliche Arbeit (Build)
+# läuft nur, wenn die Web-App eine request.json abgelegt hat. systemd startet
+# den oneshot-Service nicht überlappend, ein länger laufender Build wird also
+# nicht unterbrochen.
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=15
+
+[Install]
+WantedBy=timers.target

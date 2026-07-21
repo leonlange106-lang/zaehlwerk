@@ -94,6 +94,8 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     ("/api/system/info",  None,          "viewer"),
     ("/api/backup",       None,          "admin"),
     ("/api/mqtt",         None,          "admin"),
+    # Selbst-Update (dezentral): Prüfen, Auslösen und Rollback nur für Admins.
+    ("/api/update",       None,          "admin"),
     # Lesende Abrufe lösen ausgehende Verbindungen aus – nicht für Gäste.
     ("/api/external",     WRITE_METHODS, "admin"),
     ("/api/external",     None,          "viewer"),

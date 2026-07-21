@@ -16,11 +16,18 @@ services:
       # persistente Verzeichnis; Sicherungen gehören für Restore/Rollback
       # zwingend dorthin.
       ZAEHLWERK_BACKUP_DIR: /data/backups
+      # Kontrollverzeichnis für den Selbst-Update-Weg: die App legt hier nur
+      # Anforderungen ab (request.json), das Host-Skript liest sie. Als
+      # BIND-Mount (kein Volume), damit der Host dieselbe Ablage sieht. Ohne
+      # dieses Mapping ist der Update-Tab schlicht ausgeblendet (supported=false).
+      ZAEHLWERK_CONTROL_DIR: /control
       # Im dezentralen Betrieb greift die HA-Integration per Origin darauf zu.
       # CORS nur so weit öffnen, wie nötig (z. B. die HA-URL statt "*").
       CORS_ORIGINS: "*"
     volumes:
       - zaehlwerk-data:/data
+      # Host-Seite: <repo>/control  <->  Container: /control
+      - ../control:/control
     ports:
       - "8000:8000"
     mem_limit: 512m

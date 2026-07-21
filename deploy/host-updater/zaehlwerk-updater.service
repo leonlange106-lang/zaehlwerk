@@ -1,0 +1,14 @@
+[Unit]
+Description=Zählwerk Host-Updater (führt angeforderte Updates/Rollbacks aus)
+# Erst laufen, wenn Docker bereit ist.
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# Pfade anpassen, falls das Repo nicht unter /root/zaehlwerk liegt:
+Environment=ZAEHLWERK_REPO_DIR=/root/zaehlwerk
+# Kontrollverzeichnis MUSS mit dem Bind-Mount aus docker-compose.yml
+# übereinstimmen (dort: ../control:/control, also $REPO_DIR/control).
+Environment=ZAEHLWERK_CONTROL_DIR=/root/zaehlwerk/control
+ExecStart=/root/zaehlwerk/deploy/host-updater/zaehlwerk-updater.sh

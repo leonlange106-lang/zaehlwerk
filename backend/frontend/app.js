@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.6";
+const APP_VERSION = "3.23.0";
 const APP_CHANGELOG = [
+  { v: "3.23.0", d: "21.07.2026", items: [
+    "Selbst-Update für den eigenständigen Betrieb (Admin-Tools → Update): zeigt die installierte und die auf GitHub verfügbare Version, prüft im Hintergrund und auf Knopfdruck, und stößt Update bzw. Rückkehr zur Vorversion an. Aus Sicherheitsgründen führt die App selbst keine Befehle aus – ein kleines Host-Skript auf dem Server erledigt das; vor jedem Vorgang wird automatisch eine Sicherung erstellt. Unter Home Assistant kommen Updates weiterhin über den Add-on-Store, dort ist die Funktion ausgeblendet",
+  ]},
   { v: "3.22.6", d: "21.07.2026", items: [
     "Versionsverlauf im Desktop-Modus neu gestaltet: strukturierte Zeitachse (Version und Datum links, Änderungen rechts), die aktuelle Version ist hervorgehoben, jeder Eintrag ist einem Modul zugeordnet (z. B. Datensicherung, Auswertung, Konten & Zugriff) und lässt sich über eine Filterleiste nach Modul eingrenzen",
   ]},
@@ -2505,6 +2508,10 @@ createApp({
     latest: {},                // system_id -> { value, datum }
     showChangelog: false,
     clFilter: null,            // Versionsverlauf: aktives Modul-Filter (null = alle)
+    /* Selbst-Update (dezentral) */
+    updateStatus: null,
+    updateBusy: false,
+    updateConfirm: null,       // 'update' | 'rollback' während der Bestätigung
     /* Sektion A: serverseitige Anwendungsparameter */
     appSettings: null,
     appSettingsDraft: null,
@@ -2908,6 +2915,40 @@ createApp({
       try { this.backupStatus = await api("/api/backup"); }
       catch (e) { this.notify(e.message, "err"); }
     },
+    /* ---------- Selbst-Update (dezentral) ---------- */
+    async loadUpdateStatus() {
+      // Fehlertolerant und still: der Endpunkt existiert immer, meldet aber
+      // supported:false, wenn der Selbst-Update-Weg nicht eingerichtet ist.
+      try { this.updateStatus = await api("/api/update/status"); } catch (_) {}
+    },
+    async checkUpdate() {
+      this.updateBusy = true;
+      try {
+        this.updateStatus = await api("/api/update/check", { method: "POST" });
+        this.notify(this.updateStatus.update_available
+          ? "Neue Version verfügbar: v" + this.updateStatus.latest
+          : "Zählwerk ist auf dem neuesten Stand", "ok");
+      } catch (e) { this.notify("Prüfung fehlgeschlagen: " + e.message, "err"); }
+      finally { this.updateBusy = false; }
+    },
+    async runUpdate() {
+      this.updateBusy = true; this.updateConfirm = null;
+      try {
+        await api("/api/update/run", { method: "POST" });
+        this.notify("Update angefordert – der Host führt es aus. Der Dienst startet gleich neu.", "ok");
+        await this.loadUpdateStatus();
+      } catch (e) { this.notify("Update fehlgeschlagen: " + e.message, "err"); }
+      finally { this.updateBusy = false; }
+    },
+    async runRollback() {
+      this.updateBusy = true; this.updateConfirm = null;
+      try {
+        await api("/api/update/rollback", { method: "POST" });
+        this.notify("Rollback angefordert – der Host setzt auf die Vorversion zurück.", "ok");
+        await this.loadUpdateStatus();
+      } catch (e) { this.notify("Rollback fehlgeschlagen: " + e.message, "err"); }
+      finally { this.updateBusy = false; }
+    },
     /* Wiederherstellung ist destruktiv: der aktuelle Bestand wird zwar vorher
        automatisch weggesichert, alles seit der gewählten Sicherung geht aber
        verloren. Ein einfaches Ja/Nein ist dafür zu leicht wegzuklicken – die
@@ -3273,6 +3314,7 @@ createApp({
         ]);
         this.backupStatus = b;
         this.loadMqtt();
+        this.loadUpdateStatus();          // Update-Tab erscheint nur, wenn eingerichtet
         if (this.isAdmin) this.loadUsers();
         this.appSettings = s;
         this.appSettingsDraft = { ...s };
@@ -4059,6 +4101,7 @@ createApp({
         <button :class="{active: adminTab==='netzwerk'}" @click="adminTab='netzwerk'">Netzwerk</button>
         <button :class="{active: adminTab==='zugriff'}"  @click="adminTab='zugriff'">Zugriff</button>
         <button :class="{active: adminTab==='daten'}"    @click="adminTab='daten'; loadBackupStatus()">Datenmanagement</button>
+        <button v-if="updateStatus && updateStatus.supported" :class="{active: adminTab==='update'}" @click="adminTab='update'; loadUpdateStatus()">Update</button>
         <button :class="{active: adminTab==='diag'}"     @click="adminTab='diag'">Diagnose</button>
         <button :class="{active: adminTab==='sql'}"      @click="adminTab='sql'">Abfrage</button>
         <button :class="{active: adminTab==='logs'}"     @click="adminTab='logs'; loadAdminLogs()">Protokoll</button>
@@ -4685,6 +4728,67 @@ createApp({
             </div>
           </div>
           <div class="hint" v-else>Keine Meldungen auf dieser Stufe.</div>
+        </div>
+      </template>
+
+      <template v-else-if="adminTab==='update'">
+        <div class="card set-card">
+          <h3>Version &amp; Update</h3>
+          <p class="hint">Prüft das öffentliche Repository auf eine neue Version und stößt
+            Update bzw. Rückkehr zur Vorversion an. <strong>Ausgeführt</strong> wird beides vom
+            Host-Skript auf dem Server – die App selbst führt keine Befehle aus. Vor jedem
+            Vorgang wird automatisch eine Datenbank-Sicherung erstellt.</p>
+
+          <div v-if="!updateStatus" class="hint">Lade …</div>
+          <template v-else>
+            <table class="info-table">
+              <tr><td>Installierte Version</td><td class="num">v{{ updateStatus.current }}</td></tr>
+              <tr><td>Verfügbare Version</td><td class="num">
+                {{ updateStatus.latest ? 'v'+updateStatus.latest : '—' }}
+                <span class="s-tag" v-if="updateStatus.update_available">neu</span>
+              </td></tr>
+              <tr v-if="updateStatus.checked_at"><td>Zuletzt geprüft</td>
+                <td>{{ updateStatus.checked_at.replace('T',' ').slice(0,16) }}</td></tr>
+            </table>
+
+            <div class="hint ks-note" v-if="updateStatus.check_error && updateStatus.check_error.includes('Offline')">
+              Internetzugriff ist derzeit deaktiviert (Kill-Switch). Für die Versionsprüfung
+              unter <em>Admin-Tools → System → Internetzugriff</em> aktivieren.
+            </div>
+            <div class="err-inline" v-else-if="updateStatus.check_error">Prüfung fehlgeschlagen: {{ updateStatus.check_error }}</div>
+
+            <div class="hint ks-note" v-if="updateStatus.pending">
+              Ein Vorgang („{{ updateStatus.pending.action }}“) wurde angefordert und wird vom
+              Host ausgeführt. Der Dienst startet dabei neu; nach dem Neuladen ist der neue Stand aktiv.
+            </div>
+
+            <div class="hint" v-if="updateStatus.last_action">
+              Letzter Vorgang: {{ updateStatus.last_action.action }} –
+              <strong>{{ updateStatus.last_action.ok ? 'erfolgreich' : 'fehlgeschlagen' }}</strong>
+              <template v-if="updateStatus.last_action.to"> (→ v{{ updateStatus.last_action.to }})</template>
+              <template v-if="updateStatus.last_action.message"> · {{ updateStatus.last_action.message }}</template>
+            </div>
+
+            <div class="settings-actions">
+              <button class="btn" :disabled="updateBusy" @click="checkUpdate">↻ Nach Updates suchen</button>
+              <button class="btn btn-primary"
+                      :disabled="updateBusy || !updateStatus.update_available || !!updateStatus.pending"
+                      @click="updateConfirm='update'">⬆ Update jetzt ausführen</button>
+              <button class="btn btn-tonal" :disabled="updateBusy || !!updateStatus.pending"
+                      @click="updateConfirm='rollback'">↺ Auf vorherige Version zurücksetzen</button>
+            </div>
+
+            <div class="ks-note hint" v-if="updateConfirm">
+              <strong v-if="updateConfirm==='update'">Update auf v{{ updateStatus.latest }} starten?</strong>
+              <strong v-else>Auf die zuletzt installierte Version zurücksetzen?</strong>
+              Der Dienst startet dabei neu und ist kurz nicht erreichbar.
+              <div class="settings-actions">
+                <button class="btn" @click="updateConfirm=null">Abbrechen</button>
+                <button class="btn btn-primary" :disabled="updateBusy"
+                        @click="updateConfirm==='update' ? runUpdate() : runRollback()">Bestätigen</button>
+              </div>
+            </div>
+          </template>
         </div>
       </template>
     </template>

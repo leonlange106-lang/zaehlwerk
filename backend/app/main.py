@@ -12,10 +12,11 @@ from sqlmodel import Session
 from .database import engine, init_db
 from .version import APP_VERSION
 from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
-               notifier, outbound)
+               notifier, outbound, updater as updater_mod)
 from .routers import (admin, auth as auth_router, backups, dashboard, external,
                       ha, imports, meters, mqtt, ocr as ocr_router, readings,
-                      settings as settings_router, systems, tariffs)
+                      settings as settings_router, systems, tariffs,
+                      update as update_router)
 
 app = FastAPI(
     title="Zählwerk API",
@@ -50,6 +51,7 @@ app.include_router(tariffs.router)
 app.include_router(mqtt.router)
 app.include_router(settings_router.router)
 app.include_router(ha.router)
+app.include_router(update_router.router)
 
 
 @app.middleware("http")
@@ -129,6 +131,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(notifier.watcher())
     asyncio.create_task(backup_mod.scheduler())
+    asyncio.create_task(updater_mod.check_scheduler())
     # MQTT nach dem Socket-Guard starten: ein Broker im eigenen Netz ist von
     # der Sperre nicht betroffen, ein oeffentlicher schon - und genau so soll es sein.
     await asyncio.to_thread(mqtt_client.boot)

@@ -59,6 +59,15 @@ PROVIDERS: dict[str, dict] = {
         "ttl": 3600,
         "privacy": "Kein Schlüssel, keine Registrierung.",
     },
+    # Versionsprüfung für den dezentralen Selbst-Update-Weg. Liest ausschließlich
+    # die Versionsdatei des öffentlichen Repos (contents-API, Base64-JSON).
+    "github_version": {
+        "label": "GitHub (Versionsprüfung)",
+        "host": "api.github.com",
+        "base": "https://api.github.com/repos/leonlange106-lang/zaehlwerk/contents/backend/app/version.py",
+        "ttl": 3600,          # 1 h
+        "privacy": "Kein Schlüssel. Übertragen wird nur die Abfrage der Versionsdatei.",
+    },
 }
 
 ALLOWED_HOSTS = {p["host"] for p in PROVIDERS.values()}
