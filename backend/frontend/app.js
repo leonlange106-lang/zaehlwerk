@@ -4,8 +4,11 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.22.5";
+const APP_VERSION = "3.22.6";
 const APP_CHANGELOG = [
+  { v: "3.22.6", d: "21.07.2026", items: [
+    "Versionsverlauf im Desktop-Modus neu gestaltet: strukturierte Zeitachse (Version und Datum links, Änderungen rechts), die aktuelle Version ist hervorgehoben, jeder Eintrag ist einem Modul zugeordnet (z. B. Datensicherung, Auswertung, Konten & Zugriff) und lässt sich über eine Filterleiste nach Modul eingrenzen",
+  ]},
   { v: "3.22.5", d: "21.07.2026", items: [
     "Die Versionsnummer wird jetzt auch bei eingeklappter Seitenleiste unten links angezeigt (Desktop) – vorher war sie nur im ausgeklappten Zustand sichtbar",
   ]},
@@ -319,6 +322,27 @@ const APP_CHANGELOG = [
   { v: "2.0.0", d: "16.07.2026", items: ["Standalone: InfluxDB durch SQLite ersetzt, LXC überflüssig"] },
   { v: "1.x", d: "15.07.2026", items: ["Erstversion: FastAPI + InfluxDB + Vue 3, CSV-Import, PDF-Berichte, Dark Mode"] },
 ];
+
+/* ---------- Versionsverlauf: Modul-Zuordnung ----------
+   Ordnet jedem Changelog-Eintrag ein Modul zu, damit die Versionshistorie im
+   Desktop-Modus nach Bereich lesbar und filterbar wird. Zuordnung heuristisch
+   ueber Schluesselbegriffe (Reihenfolge = Prioritaet, Spezifisches zuerst); ein
+   Eintrag kann alternativ als Objekt {m:"key", t:"Text"} ein Modul erzwingen. */
+const CHANGELOG_MODULES = [
+  { key: "auth",     label: "Konten & Zugriff",  re: /login|anmeld|passwort|konto|rolle|administrator|sitzung|zugang|aussperr|lockout/i },
+  { key: "backup",   label: "Datensicherung",    re: /sicherung|backup|wiederherstell|restore|rollback/i },
+  { key: "mqtt",     label: "MQTT",              re: /mqtt|broker|tasmota|discovery/i },
+  { key: "analysis", label: "Auswertung",        re: /dashboard|auswertung|diagramm|chart|kachel|prognose|hochrechnung/i },
+  { key: "billing",  label: "Abrechnung",        re: /tarif|grundpreis|arbeitspreis|kosten|abrechnung|verbrauch|abschlag|einspeis/i },
+  { key: "data",     label: "Daten & Erfassung", re: /ablesung|z[äa]hler|import|export|csv|json|bericht|erfass|ocr|scanner|rohdaten/i },
+  { key: "ui",       label: "Oberfläche",        re: /mobil|seitenleiste|navigation|\bnav\b|tab-|tab-leiste|schaltfl|oberfl|layout|desktop|versionsnummer|dunkel|theme|palette|farbe|kontrast|startseite|fab/i },
+  { key: "quality",  label: "Qualität & Tests",  re: /\btest|\bci\b|regression|refactor|aufr[äa]um|code[- ]review|wartung|toter code/i },
+  { key: "system",   label: "System & Betrieb",  re: /update|build|image|docker|add-on|supervisor|home assistant|migration|backend|\bapi\b|watchdog|audit|telemetrie|retention/i },
+];
+function clModule(text) {
+  for (const m of CHANGELOG_MODULES) if (m.re.test(text)) return m;
+  return null;
+}
 
 /* ---------- Theme (Light/Dark, System-follow + manuell) ---------- */
 /* Drei unabhaengige Achsen: Modus (hell/dunkel/auto), Palette, Kontrast.
@@ -2480,6 +2504,7 @@ createApp({
     types: SYSTEM_TYPES,
     latest: {},                // system_id -> { value, datum }
     showChangelog: false,
+    clFilter: null,            // Versionsverlauf: aktives Modul-Filter (null = alle)
     /* Sektion A: serverseitige Anwendungsparameter */
     appSettings: null,
     appSettingsDraft: null,
@@ -2566,6 +2591,35 @@ createApp({
     navMenuIcon() { return SVG.menu; },
     chevronIcon() { return SVG.chevron; },
     navHomeIcon() { return SVG.home; },
+    /* Versionsverlauf, aufbereitet: je Eintrag ein Modul (heuristisch oder
+       erzwungen), neueste Version als "aktuell" markiert. */
+    changelogView() {
+      return this.changelog.map((rel, idx) => ({
+        v: rel.v, d: rel.d, latest: idx === 0,
+        items: rel.items.map((it) => {
+          const text = typeof it === "string" ? it : it.t;
+          const mod = (typeof it === "object" && it.m)
+            ? CHANGELOG_MODULES.find((m) => m.key === it.m)
+            : clModule(text);
+          return { text, module: mod || null };
+        }),
+      }));
+    },
+    /* Nur die Module, die tatsaechlich vorkommen - Grundlage der Filterleiste. */
+    changelogModules() {
+      const seen = new Map();
+      for (const rel of this.changelogView)
+        for (const it of rel.items)
+          if (it.module && !seen.has(it.module.key)) seen.set(it.module.key, it.module);
+      return CHANGELOG_MODULES.filter((m) => seen.has(m.key));
+    },
+    /* Nach aktivem Modul gefiltert; Versionen ohne Treffer fallen raus. */
+    changelogFiltered() {
+      if (!this.clFilter) return this.changelogView;
+      return this.changelogView
+        .map((rel) => ({ ...rel, items: rel.items.filter((it) => it.module && it.module.key === this.clFilter) }))
+        .filter((rel) => rel.items.length);
+    },
     greeting() {
       const h = new Date().getHours();
       return h < 5 ? "Gute Nacht" : h < 11 ? "Guten Morgen"
@@ -5003,12 +5057,30 @@ createApp({
 
   <!-- MODAL: Versionsverlauf -->
   <div class="overlay" v-if="showChangelog" @click.self="showChangelog=false">
-    <div class="modal">
-      <div class="modal-head"><h3>Versionsverlauf</h3></div>
-      <div class="modal-body">
-        <div v-for="rel in changelog" :key="rel.v" class="rel">
-          <div class="rel-head"><span class="rel-v num">v{{ rel.v }}</span><span class="rel-d">{{ rel.d }}</span></div>
-          <ul class="rel-items"><li v-for="(it, i) in rel.items" :key="i">{{ it }}</li></ul>
+    <div class="modal modal-changelog">
+      <div class="modal-head cl-head">
+        <h3>Versionsverlauf</h3>
+        <span class="cl-current num">Aktuell: v{{ appVersion }}</span>
+      </div>
+      <div class="cl-filter">
+        <button class="cl-chip" :class="{active: !clFilter}" @click="clFilter=null">Alle</button>
+        <button v-for="m in changelogModules" :key="m.key"
+                class="cl-chip" :class="['cl-'+m.key, {active: clFilter===m.key}]"
+                @click="clFilter = clFilter===m.key ? null : m.key">{{ m.label }}</button>
+      </div>
+      <div class="modal-body cl-body">
+        <div v-for="rel in changelogFiltered" :key="rel.v" class="cl-rel" :class="{latest: rel.latest}">
+          <div class="cl-side">
+            <span class="cl-v num">v{{ rel.v }}</span>
+            <span class="cl-badge" v-if="rel.latest">aktuell</span>
+            <span class="cl-d">{{ rel.d }}</span>
+          </div>
+          <ul class="cl-items">
+            <li v-for="(it, i) in rel.items" :key="i">
+              <span v-if="it.module" class="cl-tag" :class="'cl-'+it.module.key">{{ it.module.label }}</span>
+              <span class="cl-text">{{ it.text }}</span>
+            </li>
+          </ul>
         </div>
       </div>
       <div class="modal-foot"><button class="btn btn-primary" @click="showChangelog=false">Schließen</button></div>

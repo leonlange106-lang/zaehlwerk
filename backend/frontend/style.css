@@ -733,12 +733,53 @@ td.r { text-align: right; }
 .beta { font-size: 10px; font-weight: 500; letter-spacing: .5px; text-transform: uppercase;
   padding: 3px 8px; border-radius: 6px; background: var(--md-warn-container); color: var(--md-on-surface);
   vertical-align: middle; margin-left: 6px; }
-.rel { margin-bottom: 18px; }
-.rel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
-.rel-v { font-weight: 700; font-size: 15px; }
-.rel-d { font-size: 12px; color: var(--md-on-surface-variant); }
-.rel-items { margin: 0; padding-left: 18px; font-size: 13px; line-height: 20px; color: var(--md-on-surface); }
-.rel-items li { margin-bottom: 3px; }
+/* ---------- Versionsverlauf (strukturiert, Desktop-optimiert) ---------- */
+.modal-changelog { max-width: 780px; }
+.cl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.cl-current { font-size: 12px; color: var(--md-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cl-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 24px 12px; }
+.cl-chip {
+  border: 1px solid var(--md-outline-variant); background: var(--md-surface);
+  color: var(--md-on-surface-variant); border-radius: 999px; padding: 4px 12px;
+  font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer;
+  white-space: nowrap; transition: background var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+}
+.cl-chip:hover { background: var(--md-surface-c); }
+.cl-chip.active { background: var(--md-secondary-container); color: var(--md-on-secondary-container); border-color: transparent; }
+.cl-body { padding-top: 4px; }
+/* Zwei Spalten: links Version + Datum (Zeitachse), rechts die Einträge. */
+.cl-rel { display: grid; grid-template-columns: 132px 1fr; gap: 18px; padding: 16px 0; border-top: 1px solid var(--md-outline-variant); }
+.cl-rel:first-child { border-top: none; }
+.cl-rel.latest { background: linear-gradient(90deg, var(--md-surface-c) 0%, transparent 60%); border-radius: 12px; margin: 0 -12px; padding: 16px 12px; }
+.cl-side { display: flex; flex-direction: column; gap: 4px; }
+.cl-v { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--md-on-surface); }
+.cl-badge { align-self: flex-start; font-size: 10px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase;
+  background: var(--md-primary); color: var(--md-on-primary); border-radius: 6px; padding: 1px 7px; }
+.cl-d { font-size: 12px; color: var(--md-on-surface-variant); }
+.cl-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.cl-items li { display: flex; gap: 9px; align-items: baseline; font-size: 13px; line-height: 19px; color: var(--md-on-surface); }
+.cl-text { flex: 1; }
+.cl-tag {
+  flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: .2px;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--md-surface-c-high); color: var(--md-on-surface-variant);
+  border-left: 3px solid var(--md-outline);
+}
+/* Modul-Akzentfarben – dezent, nur der linke Rand trägt die Farbe. */
+.cl-tag.cl-auth     { border-left-color: #d9534f; }
+.cl-tag.cl-backup   { border-left-color: #0e7c86; }
+.cl-tag.cl-mqtt     { border-left-color: #7b52ab; }
+.cl-tag.cl-analysis { border-left-color: #2e7d32; }
+.cl-tag.cl-billing  { border-left-color: #b8860b; }
+.cl-tag.cl-data     { border-left-color: #1565c0; }
+.cl-tag.cl-ui       { border-left-color: #c2185b; }
+.cl-tag.cl-quality  { border-left-color: #00838f; }
+.cl-tag.cl-system   { border-left-color: #5d6d7e; }
+@media (max-width: 620px) {
+  .cl-rel { grid-template-columns: 1fr; gap: 8px; }
+  .cl-side { flex-direction: row; align-items: baseline; gap: 8px; }
+  .cl-items li { flex-wrap: wrap; gap: 6px; }
+}
 
 /* ---------- Ripple ---------- */
 .ripple-ink { position: absolute; border-radius: 50%; transform: scale(0); pointer-events: none;
