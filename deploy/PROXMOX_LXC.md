@@ -10,11 +10,31 @@ nötig.
 - Debian-12-LXC (unprivileged genügt), 2 vCPU / 1 GB RAM / 8 GB Disk als Start.
 - Docker im LXC: bei unprivileged Containern `keyctl`/`nesting` in den Optionen
   aktivieren (`Options → Features: nesting=1, keyctl=1`).
+- Netzwerk: bei einem frischen Debian-12-Template bleibt `eth0` mitunter ohne
+  Konfiguration (`/etc/network/interfaces` enthält dann nur `lo`), obwohl
+  Proxmox dem Container in der GUI eine Netzwerkkarte zugewiesen hat. Prüfen
+  mit `ip -4 addr show eth0`; bleibt sie leer, fehlt der DHCP-Eintrag:
+  ```sh
+  cat >> /etc/network/interfaces <<'EOF'
+
+  auto eth0
+  iface eth0 inet dhcp
+  EOF
+  systemctl restart networking
+  ```
+  Danach sollte `ping -c2 1.1.1.1` und `ping -c2 deb.debian.org` funktionieren.
 
 ## 2. Zählwerk starten
 
+Docker samt Compose-Plugin kommt aus **Dockers eigenem Repo**, nicht aus
+Debians Paketquellen – ein Paket namens `docker-compose-plugin` existiert dort
+nicht (`E: Unable to locate package docker-compose-plugin`, falls doch
+versucht):
+
 ```sh
-apt update && apt install -y docker.io docker-compose-plugin git
+apt update
+curl -fsSL https://get.docker.com | sh
+apt install -y git
 git clone https://github.com/leonlange106-lang/zaehlwerk.git
 cd zaehlwerk/deploy
 docker compose up -d --build
