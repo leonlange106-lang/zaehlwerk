@@ -1,0 +1,23 @@
+# Dezentraler Standalone-Betrieb von Zählwerk – ohne Home Assistant.
+# Die HA-Anbindung übernimmt die Custom-Integration (custom_components/zaehlwerk),
+# die dieses Backend über seine REST-API anspricht.
+services:
+  zaehlwerk:
+    build: ../backend
+    image: zaehlwerk:local
+    container_name: zaehlwerk
+    restart: unless-stopped
+    environment:
+      # Persistenter DB-Pfad. Muss auf ein gemountetes Volume zeigen.
+      SQLITE_PATH: /data/zaehlwerk.db
+      # Im dezentralen Betrieb greift die HA-Integration per Origin darauf zu.
+      # CORS nur so weit öffnen, wie nötig (z. B. die HA-URL statt "*").
+      CORS_ORIGINS: "*"
+    volumes:
+      - zaehlwerk-data:/data
+    ports:
+      - "8000:8000"
+    mem_limit: 512m
+
+volumes:
+  zaehlwerk-data:

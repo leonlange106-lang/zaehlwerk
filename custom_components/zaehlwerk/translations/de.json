@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zählwerk – Betriebsmodus",
+        "description": "Läuft Zählwerk noch als Add-on in dieser Home-Assistant-Instanz (HA-intern) oder bereits ausgelagert auf einer eigenen VM/LXC (dezentral)?",
+        "data": {
+          "mode": "Betriebsmodus"
+        }
+      },
+      "connection": {
+        "title": "Zählwerk – Verbindung",
+        "description": "Adresse und Zugangsdaten des Zählwerk-Backends. Im dezentralen Betrieb kann zusätzlich ein Cloudflare-Access-Service-Token gesetzt werden.",
+        "data": {
+          "url": "Basis-URL",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "verify_ssl": "TLS-Zertifikat prüfen",
+          "cf_access_client_id": "Cloudflare Access Client-ID",
+          "cf_access_client_secret": "Cloudflare Access Client-Secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Backend nicht erreichbar. URL und Netzwerk prüfen.",
+      "invalid_auth": "Benutzername oder Passwort abgelehnt."
+    },
+    "abort": {
+      "already_configured": "Diese Zählwerk-Instanz ist bereits eingerichtet."
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "intern": "HA-intern (Add-on)",
+        "dezentral": "Dezentral (eigene VM/LXC)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest": { "name": "Letzter Zählerstand" },
+      "avg_per_day": { "name": "Ø Verbrauch pro Tag" },
+      "total_cost": { "name": "Gesamtkosten" },
+      "prognosis": { "name": "Prognose Jahr" }
+    }
+  }
+}

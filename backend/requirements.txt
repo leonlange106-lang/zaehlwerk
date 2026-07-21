@@ -1,0 +1,22 @@
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+sqlmodel==0.0.39
+pydantic-settings==2.14.2
+python-multipart==0.0.32
+reportlab==5.0.0
+paho-mqtt==2.1.0
+bcrypt==5.0.0
+PyJWT==2.13.0
+pytesseract==0.3.13
+# opencv-python-headless bewusst auf 4.x statt 5.x: ab opencv 5 wird ein
+# numpy>=2.3 gezogen, dessen offizielle Wheels mit der CPU-Baseline
+# x86-64-v2 (SSE4.2/POPCNT) gebaut sind. Auf älteren/stromsparenden x86-
+# Hosts (z. B. manche NAS- oder Mini-PC-CPUs ohne SSE4.2) bricht der
+# Import dann mit "RuntimeError: NumPy was built with baseline
+# optimizations (X86_V2) but your machine doesn't support" ab - der Build
+# scheitert erst beim Laufzeit-Test in dieser Stufe, nicht beim pip install.
+# numpy deshalb explizit auf die letzte 1.x-Version gepinnt: deren Wheels
+# verlangen nur SSE/SSE2/SSE3 als Baseline.
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==12.3.0

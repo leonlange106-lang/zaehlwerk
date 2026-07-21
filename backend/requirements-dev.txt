@@ -1,0 +1,5 @@
+# Test-Abhängigkeiten. Bewusst getrennt von requirements.txt, damit das
+# Laufzeit-Image schlank bleibt und der Add-on-Build sie nicht mitzieht.
+-r requirements.txt
+pytest==8.3.3
+httpx==0.27.2

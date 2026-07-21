@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zählwerk – operating mode",
+        "description": "Is Zählwerk still running as an add-on inside this Home Assistant instance (HA-internal), or already on its own VM/LXC (decentralised)?",
+        "data": {
+          "mode": "Operating mode"
+        }
+      },
+      "connection": {
+        "title": "Zählwerk – connection",
+        "description": "Address and credentials of the Zählwerk backend. In decentralised mode you may also set a Cloudflare Access service token.",
+        "data": {
+          "url": "Base URL",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify TLS certificate",
+          "cf_access_client_id": "Cloudflare Access client ID",
+          "cf_access_client_secret": "Cloudflare Access client secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Backend not reachable. Check the URL and network.",
+      "invalid_auth": "Username or password rejected."
+    },
+    "abort": {
+      "already_configured": "This Zählwerk instance is already configured."
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "intern": "HA-internal (add-on)",
+        "dezentral": "Decentralised (own VM/LXC)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest": { "name": "Latest meter reading" },
+      "avg_per_day": { "name": "Avg consumption per day" },
+      "total_cost": { "name": "Total cost" },
+      "prognosis": { "name": "Yearly forecast" }
+    }
+  }
+}
