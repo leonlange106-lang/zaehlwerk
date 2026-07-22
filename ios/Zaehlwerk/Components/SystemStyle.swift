@@ -50,10 +50,11 @@ enum SystemStyle {
 
     static let presets: [Preset] = [
         Preset(type: "Strom", unit: "kWh"),
-        Preset(type: "Gas", unit: "kWh"),
+        Preset(type: "Gas", unit: "m³"),
         Preset(type: "Wasser", unit: "m³"),
+        Preset(type: "Wärmepumpe", unit: "kWh"),
         Preset(type: "PV-Erzeugung", unit: "kWh"),
-        Preset(type: "Wärme", unit: "kWh"),
+        Preset(type: "PV-Einspeisung", unit: "kWh"),
         Preset(type: "Heizöl", unit: "l"),
     ]
 }

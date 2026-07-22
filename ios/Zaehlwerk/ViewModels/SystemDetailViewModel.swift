@@ -80,6 +80,44 @@ final class SystemDetailViewModel {
         }
     }
 
+    /// Lädt die vollständigen Stammdaten (inkl. zusatzfelder) für die
+    /// Bearbeiten-Maske.
+    func loadEditableSystem() async -> MeterSystem? {
+        do {
+            return try await api.fetchSystem(id: systemID)
+        } catch {
+            errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            Haptics.error()
+            return nil
+        }
+    }
+
+    /// Archiviert (aktiv:false) das System. Gibt bei Erfolg `true` zurück.
+    func archive() async -> Bool {
+        do {
+            try await api.setSystemActive(id: systemID, active: false)
+            Haptics.success()
+            return true
+        } catch {
+            errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            Haptics.error()
+            return false
+        }
+    }
+
+    /// Löscht das System endgültig (inkl. Ablesungen und Zähler).
+    func deleteSystem() async -> Bool {
+        do {
+            try await api.deleteSystem(id: systemID)
+            Haptics.success()
+            return true
+        } catch {
+            errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            Haptics.error()
+            return false
+        }
+    }
+
     func deleteReading(_ reading: Reading) async {
         do {
             try await api.deleteReading(id: reading.id)

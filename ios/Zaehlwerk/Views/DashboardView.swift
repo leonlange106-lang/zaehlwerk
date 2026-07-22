@@ -72,7 +72,7 @@ struct DashboardView: View {
                                lastUpdated: model.lastUpdated)
             }
             .sheet(isPresented: $showingAddSystem) {
-                AddSystemView {
+                SystemFormView {
                     Task { await model.refresh() }
                 }
             }

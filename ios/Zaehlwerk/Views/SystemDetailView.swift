@@ -6,8 +6,12 @@ struct SystemDetailView: View {
     @Environment(AuthManager.self) private var auth
     let system: DashboardSystem
 
+    @Environment(\.dismiss) private var dismiss
+
     @State private var model: SystemDetailViewModel
     @State private var showingAdd = false
+    @State private var editSystem: MeterSystem?
+    @State private var showingDeleteConfirm = false
 
     init(system: DashboardSystem) {
         self.system = system
@@ -37,12 +41,48 @@ struct SystemDetailView: View {
                     }
                     .accessibilityLabel("Ablesung hinzufügen")
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            Task {
+                                Haptics.tap()
+                                editSystem = await model.loadEditableSystem()
+                            }
+                        } label: { Label("Bearbeiten", systemImage: "pencil") }
+                        Button {
+                            Task {
+                                if await model.archive() { dismiss() }
+                            }
+                        } label: { Label("Archivieren", systemImage: "archivebox") }
+                        Divider()
+                        Button(role: .destructive) {
+                            showingDeleteConfirm = true
+                        } label: { Label("Löschen …", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Systemaktionen")
+                }
             }
         }
         .sheet(isPresented: $showingAdd) {
             AddReadingView(system: system) {
                 Task { await model.refresh() }
             }
+        }
+        .sheet(item: $editSystem) { editable in
+            SystemFormView(system: editable) {
+                Task { await model.refresh() }
+            }
+        }
+        .confirmationDialog(
+            "System „\(system.name)" mit ALLEN Ablesungen und Zählern endgültig löschen?",
+            isPresented: $showingDeleteConfirm, titleVisibility: .visible
+        ) {
+            Button("Endgültig löschen", role: .destructive) {
+                Task { if await model.deleteSystem() { dismiss() } }
+            }
+            Button("Abbrechen", role: .cancel) {}
         }
         .refreshable { await model.refresh() }
         .task { await model.load() }

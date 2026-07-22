@@ -38,8 +38,9 @@ extension APIClient {
 
     // MARK: - Systeme
 
-    func fetchSystems() async throws -> [MeterSystem] {
-        try await get("/api/systems")
+    func fetchSystems(includeArchived: Bool = false) async throws -> [MeterSystem] {
+        try await get("/api/systems",
+                      query: includeArchived ? ["include_archived": "true"] : [:])
     }
 
     func fetchSystem(id: String) async throws -> MeterSystem {
@@ -48,6 +49,26 @@ extension APIClient {
 
     func createSystem(_ request: SystemCreateRequest) async throws -> MeterSystem {
         try await post("/api/systems", body: request)
+    }
+
+    func updateSystem(id: String, _ request: SystemUpdateRequest) async throws -> MeterSystem {
+        try await patch("/api/systems/\(id)", body: request)
+    }
+
+    /// Archiviert (aktiv:false) oder reaktiviert (aktiv:true) ein System.
+    @discardableResult
+    func setSystemActive(id: String, active: Bool) async throws -> MeterSystem {
+        try await patch("/api/systems/\(id)", body: SystemUpdateRequest(aktiv: active))
+    }
+
+    func deleteSystem(id: String) async throws {
+        try await delete("/api/systems/\(id)")
+    }
+
+    /// Prüft eine Smart-Home-Anbindung (HA-Entity oder REST-URL) live, ohne zu
+    /// speichern – speist den „Testen"-Knopf der Konfigurationsmaske.
+    func testBinding(_ request: BindingTestRequest) async throws -> BindingTestResult {
+        try await post("/api/systems/binding/test", body: request)
     }
 
     // MARK: - Ablesungen

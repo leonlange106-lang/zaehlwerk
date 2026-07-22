@@ -43,7 +43,7 @@ ios/Zaehlwerk/
 │   ├── DashboardViewModel.swift
 │   ├── SystemDetailViewModel.swift   # lädt Stats/Chart/Ablesungen parallel
 │   ├── AddReadingViewModel.swift
-│   └── AddSystemViewModel.swift
+│   └── SystemFormViewModel.swift     # Anlegen/Bearbeiten + Smart-Home-Anbindung
 ├── Components/                # wiederverwendbare UI-Bausteine
 │   ├── Color+Hex.swift        # Color(hex:)-Hilfsinitialisierer
 │   ├── GlassCard.swift        # Material-Karte, respektiert „Transparenz reduzieren"
@@ -63,7 +63,7 @@ ios/Zaehlwerk/
     ├── DashboardView.swift           # Systemkarten + Prognose, „+" legt System an
     ├── SystemDetailView.swift        # Kennzahlen + Diagramm + Ablesungen
     ├── AddReadingView.swift          # Ablesungs-Eingabe (Sheet)
-    ├── AddSystemView.swift           # System anlegen (Sheet, Typ-Vorlagen)
+    ├── SystemFormView.swift          # System anlegen/bearbeiten (Typ, Smart-Home)
     ├── HistoryView.swift             # Verlauf über alle Systeme
     ├── SettingsView.swift            # Konto, Sicherheit, Verbindung
     └── TwoFactorEnrollView.swift     # 2FA nachträglich aktivieren
