@@ -13,11 +13,8 @@ struct ZaehlwerkApp: App {
     }
 }
 
-/// Minimaler Wurzel-Router für den Network-Layer-Meilenstein (Schritt 1).
-/// Er zeigt je Anmeldephase eine schlanke, funktionsfähige Ansicht, mit der
-/// sich Netzwerk- und Auth-Schicht gegen ein echtes Backend prüfen lassen.
-/// Die vollwertigen, HIG-konformen Screens (Dashboard, Detail, Eingabe,
-/// Einstellungen) folgen in den nächsten Schritten und ersetzen diese Hüllen.
+/// Wurzel-Router: wählt je Anmeldephase den passenden Screen.
+/// Der authentifizierte Zustand zeigt die vollwertige Tab-Oberfläche.
 struct RootView: View {
     @Environment(AuthManager.self) private var auth
 
@@ -34,7 +31,7 @@ struct RootView: View {
         case .onboarding:
             OnboardingView()
         case .authenticated:
-            ConnectedPlaceholderView()
+            MainTabView()
         }
     }
 }

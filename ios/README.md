@@ -4,12 +4,13 @@ Nativer SwiftUI-Client für das dezentrale **Zählwerk**-Backend – kein WebVie
 keine Weiterleitung, sondern eine eigenständige App mit voller Funktionsparität
 zum Web-Tool (Zählerstände, Historie, Statistiken, Einstellungen).
 
-> **Status:** Schritt 1 (Netzwerk- & Datenschicht) ist umgesetzt. Die Views in
-> `Views/` sind bewusst schlanke, funktionsfähige Hüllen, mit denen sich die
-> Auth- und API-Schicht gegen ein echtes Backend prüfen lässt. Die
-> vollwertigen, HIG-konformen Screens (Dashboard, Detail, Eingabe,
-> Einstellungen inkl. Liquid-Glass-Materialien, Haptik und SwiftData-Offline-
-> Cache) folgen in den nächsten Schritten und ersetzen diese Hüllen.
+> **Status:** Schritt 1 (Netzwerk- & Datenschicht) **und** Schritt 2 (vollwertige
+> HIG-Screens) sind umgesetzt: Übersicht mit Kennzahlen und Miniatur-Verläufen,
+> System-Detail mit Swift-Charts-Diagramm und Ablesungsliste, Ablesungs-Eingabe,
+> Verlauf und Einstellungen (Passwort ändern, 2FA aktivieren) – im Look-and-Feel
+> einer Apple-Systemapp mit Liquid-Glass-Materialien, dezenter Haptik und
+> Rücksicht auf „Transparenz reduzieren". Offen für Schritt 3: SwiftData-
+> Offline-Cache.
 
 ## Architektur
 
@@ -36,14 +37,31 @@ ios/Zaehlwerk/
 │   ├── JSONCoding.swift       # De-/Encoder inkl. gemischter Datumsformate des Backends
 │   ├── KeychainStore.swift    # Keychain-Wrapper (Security)
 │   └── SessionStores.swift    # thread-sichere Wertzugriffe für den APIClient
-├── Components/
-│   └── Color+Hex.swift        # Color(hex:)-Hilfsinitialisierer
-└── Views/                     # schlanke Auth-/Platzhalter-Ansichten (Schritt 1)
-    ├── ServerSetupView.swift
+├── ViewModels/                # @MainActor @Observable – Zustand je Screen
+│   ├── DashboardViewModel.swift
+│   ├── SystemDetailViewModel.swift   # lädt Stats/Chart/Ablesungen parallel
+│   └── AddReadingViewModel.swift
+├── Components/                # wiederverwendbare UI-Bausteine
+│   ├── Color+Hex.swift        # Color(hex:)-Hilfsinitialisierer
+│   ├── GlassCard.swift        # Material-Karte, respektiert „Transparenz reduzieren"
+│   ├── StatTile.swift         # Kennzahl-Kachel (Dynamic Type)
+│   ├── SystemStyle.swift      # SF-Symbol + Farbe je Systemtyp
+│   ├── Format.swift           # lokalisierte Zahlen-/Kosten-/Datumsformate
+│   ├── Haptics.swift          # dezente UIImpact-/Notification-Haptik
+│   ├── ConsumptionChartView.swift    # Swift-Charts-Verlauf (Detail)
+│   └── Sparkline.swift        # Miniatur-Verlauf (Übersichtskarten)
+└── Views/
+    ├── ServerSetupView.swift         # Schritt 1: Auth-Fluss
     ├── LoginView.swift
     ├── TwoFactorLoginView.swift
     ├── OnboardingView.swift
-    └── ConnectedPlaceholderView.swift
+    ├── MainTabView.swift             # Schritt 2: Tab-Shell (Übersicht/Verlauf/Einstellungen)
+    ├── DashboardView.swift           # Systemkarten + Prognose
+    ├── SystemDetailView.swift        # Kennzahlen + Diagramm + Ablesungen
+    ├── AddReadingView.swift          # Ablesungs-Eingabe (Sheet)
+    ├── HistoryView.swift             # Verlauf über alle Systeme
+    ├── SettingsView.swift            # Konto, Sicherheit, Verbindung
+    └── TwoFactorEnrollView.swift     # 2FA nachträglich aktivieren
 ```
 
 ### Schichtentrennung
@@ -70,7 +88,7 @@ Anmeldefluss (`AuthPhase`):
 2. `loggedOut` – Anmeldung → `LoginView`
 3. `twoFactorRequired` – Passwort ok, TOTP fehlt → `TwoFactorLoginView`
 4. `onboarding` – erzwungene Erstanmeldung (Passwort + 2FA) → `OnboardingView`
-5. `authenticated` → `ConnectedPlaceholderView`
+5. `authenticated` → `MainTabView` (Übersicht / Verlauf / Einstellungen)
 
 Optional werden **Cloudflare-Access-Service-Token** (`CF-Access-Client-Id` /
 `-Secret`) mitgesendet, falls das Backend hinter Cloudflare Access liegt; die
@@ -87,10 +105,12 @@ absolute Pfade). Das Projekt wird lokal erzeugt:
 3. Das automatisch erzeugte `ContentView.swift` und die generierte
    `…App.swift`-Datei löschen.
 4. Den Inhalt von `ios/Zaehlwerk/` (Ordner `Config`, `Models`, `Services`,
-   `Components`, `Views` sowie `ZaehlwerkApp.swift`) per *Add Files to
-   „Zaehlwerk“…* mit **„Create groups“** hinzufügen.
-5. Deployment Target **iOS 17.0+** (für das `@Observable`-Makro; Swift-6-
-   Concurrency wird empfohlen).
+   `ViewModels`, `Components`, `Views` sowie `ZaehlwerkApp.swift`) per *Add
+   Files to „Zaehlwerk“…* mit **„Create groups“** hinzufügen.
+5. Deployment Target **iOS 17.0+** (für `@Observable`, `ContentUnavailableView`
+   und Swift Charts; Swift-6-Concurrency wird empfohlen). Für die Diagramme ist
+   kein zusätzliches Paket nötig – **Swift Charts** (`import Charts`) ist Teil
+   des SDK.
 6. Build & Run auf Simulator oder Gerät. Beim ersten Start die Server-Adresse
    eingeben, z. B. `https://zaehlwerk.example.com`.
 
@@ -100,12 +120,31 @@ Dieser Code wurde in einer Umgebung **ohne Xcode/Swift-Toolchain** erstellt und
 konnte dort nicht kompiliert werden. Bitte in Xcode bauen; kleinere Anpassungen
 (Bundle-ID, Signing-Team) sind projektspezifisch vorzunehmen.
 
+## Screens (Schritt 2)
+
+- **Übersicht** – Karten je System mit aktuellem Stand, Verbrauch, Kosten,
+  Miniatur-Verlauf (Sparkline) und Jahresprognose (warnt bei Abschlags-
+  Überschreitung). Pull-to-Refresh, große Titel, gruppierter Hintergrund.
+- **System-Detail** – Kennzahlen-Kacheln, Verlaufsdiagramm (Swift Charts,
+  Ausreißer hervorgehoben) und Ablesungsliste mit Herkunfts-Chip und
+  Wischen-zum-Löschen. „+" öffnet die Eingabe (nur mit Schreibrecht).
+- **Neue Ablesung** – Datum, Zählerstand, optionale Kosten/Notiz und
+  Zählertausch mit Anfangsstand; deutsche Zahleneingabe (Komma/Punkt).
+- **Verlauf** – die zuletzt erfassten Ablesungen über alle Systeme.
+- **Einstellungen** – Konto, 2FA-Status inkl. nachträglicher Aktivierung,
+  Passwort ändern, Server-Adresse, Abmelden.
+
+### Look-and-Feel
+
+- Liquid-Glass-Karten über `.regularMaterial`; bei aktivem „Transparenz
+  reduzieren" (`accessibilityReduceTransparency`) deckendes Systemgrau.
+- Dynamic Type über System-Schriftstile, `NavigationStack` mit großen Titeln,
+  dezente Haptik (`Haptics`) bei Auswahl, Speichern und Fehlern.
+- Light/Dark automatisch über System-Farben und Materialien.
+
 ## Nächste Schritte
 
-- Schritt 2: Vollständige SwiftUI-Views (Dashboard, System-Detail mit Chart,
-  Zählereingabe, Einstellungen) im Look-and-Feel einer Apple-Systemapp.
-- Schritt 3: SwiftData-Offline-Cache (Offline-First) mit Hintergrund-Sync.
-- Schritt 4: HIG-Feinschliff – Liquid-Glass-Materialien
-  (`.ultraThinMaterial`/`.regularMaterial`, Rücksicht auf
-  `UIAccessibility.isReduceTransparencyEnabled`), Dynamic Type, dezente
-  `UIImpactFeedbackGenerator`-Haptik, Light/Dark.
+- Schritt 3: SwiftData-Offline-Cache (Offline-First) mit Hintergrund-Sync, damit
+  zuletzt geladene Kennzahlen und Ablesungen auch offline sichtbar sind.
+- Schritt 4: Feinschliff – System anlegen/bearbeiten in der App, Widgets,
+  Diagramm-Interaktion (Scrubbing), Lokalisierung.

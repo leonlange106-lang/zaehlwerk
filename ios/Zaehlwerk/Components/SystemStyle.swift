@@ -1,0 +1,26 @@
+import SwiftUI
+
+/// Ableitung von SF-Symbol und Farbe aus dem Systemtyp, damit Übersicht,
+/// Detail und Verlauf konsistent aussehen – wie eine offizielle Systemapp.
+enum SystemStyle {
+    static func symbol(for type: String) -> String {
+        let value = type.lowercased()
+        switch true {
+        case value.contains("strom"), value.contains("elektr"): return "bolt.fill"
+        case value.contains("gas"):                              return "flame.fill"
+        case value.contains("wasser"):                           return "drop.fill"
+        case value.contains("pv"), value.contains("solar"), value.contains("photovolt"):
+            return "sun.max.fill"
+        case value.contains("wärme"), value.contains("waerme"), value.contains("heiz"),
+             value.contains("therm"):
+            return "thermometer.medium"
+        case value.contains("öl"), value.contains("oel"):        return "fuelpump.fill"
+        default:                                                 return "gauge.medium"
+        }
+    }
+
+    /// Farbe aus dem Hex-Wert des Backends, mit sinnvollem Rückfall.
+    static func color(_ hex: String?) -> Color {
+        Color(hex: hex) ?? .accentColor
+    }
+}
