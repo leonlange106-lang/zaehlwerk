@@ -1,28 +1,32 @@
 import { useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, Card, SimpleGrid, Text, Table, Badge, Button, ActionIcon,
-  Skeleton, Alert, Divider, NumberInput, Textarea, Switch, FileButton, Loader,
+  Skeleton, Alert, Divider, NumberInput, Textarea, Switch, FileButton, Loader, Menu,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import {
   IconTrash, IconChevronLeft, IconAlertTriangle, IconCamera, IconArrowsExchange,
+  IconDots, IconPencil, IconArchive,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import type { EChartsOption } from 'echarts';
 import { useApiData } from '../../api/useApi';
-import { api, apiPost, apiUpload, ApiError } from '../../api/client';
+import { api, apiPost, apiPatch, apiDelete, apiUpload, ApiError } from '../../api/client';
 import type { ChartData, Reading, SystemRead, SystemStats, OcrResult } from '../../api/types';
 import { EChart } from '../../components/EChart';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtValue, fmtCost, fmtDate, fmtNumber } from '../../util/format';
+import { SystemFormModal } from './SystemFormModal';
 
 export function SystemDetailView() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canWrite = can('write');
+  const [editOpen, setEditOpen] = useState(false);
 
   const system = useApiData<SystemRead>(`/api/systems/${id}`);
   const stats = useApiData<SystemStats>(`/api/systems/${id}/stats`);
@@ -48,6 +52,27 @@ export function SystemDetailView() {
     }
   }
 
+  async function archiveSystem() {
+    try {
+      await apiPatch(`/api/systems/${id}`, { aktiv: false });
+      notifications.show({ message: 'System archiviert', color: 'teal' });
+      navigate('/readings');
+    } catch (e) {
+      notifications.show({ color: 'red', message: e instanceof ApiError ? e.message : 'Fehler' });
+    }
+  }
+
+  async function deleteSystem() {
+    if (!confirm(`System „${system.data?.name}" mit ALLEN Ablesungen und Zählern endgültig löschen?`)) return;
+    try {
+      await apiDelete(`/api/systems/${id}`);
+      notifications.show({ message: 'System gelöscht', color: 'teal' });
+      navigate('/readings');
+    } catch (e) {
+      notifications.show({ color: 'red', message: e instanceof ApiError ? e.message : 'Löschen fehlgeschlagen' });
+    }
+  }
+
   if (system.loading && !system.data) return <Skeleton h={400} radius="sm" />;
   if (system.error) return <Alert color="red" icon={<IconAlertTriangle size={16} />}>{system.error}</Alert>;
 
@@ -65,7 +90,27 @@ export function SystemDetailView() {
             <Text size="xs" c="dimmed">{system.data?.typ} · {unit}</Text>
           </div>
         </Group>
+        {canWrite && (
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon variant="subtle" color="gray" aria-label="Aktionen"><IconDots size={18} /></ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => setEditOpen(true)}>Bearbeiten</Menu.Item>
+              <Menu.Item leftSection={<IconArchive size={14} />} onClick={() => void archiveSystem()}>Archivieren</Menu.Item>
+              <Menu.Divider />
+              <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => void deleteSystem()}>Löschen …</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        )}
       </Group>
+
+      <SystemFormModal
+        opened={editOpen}
+        system={system.data ?? undefined}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => { setEditOpen(false); void system.reload(); reloadAll(); }}
+      />
 
       {stats.data && (
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
