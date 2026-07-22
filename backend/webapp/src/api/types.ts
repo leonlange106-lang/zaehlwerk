@@ -256,12 +256,42 @@ export interface QueryResult {
   truncated: boolean;
 }
 
+export interface UpdateStep {
+  phase: string;
+  ok?: boolean | null;
+  message: string;
+}
+
+export interface UpdateProgress {
+  action: string;
+  running: boolean;
+  percent: number;
+  phase: string;
+  message: string;
+  steps: UpdateStep[];
+  updated_at?: string | null;
+}
+
+export interface UpdateLastAction {
+  action: string;
+  ok: boolean;
+  message: string;
+  from?: string | null;
+  to?: string | null;
+  finished_at?: string | null;
+}
+
 export interface UpdateStatus {
   supported: boolean;
   current: string;
   latest?: string | null;
   update_available?: boolean;
+  checked_at?: string | null;
+  check_error?: string | null;
+  check_steps?: UpdateStep[];
   pending?: unknown;
+  progress?: UpdateProgress | null;
+  last_action?: UpdateLastAction | null;
 }
 
 export interface AppSettings {

@@ -43,3 +43,21 @@ def test_version_check_bypasses_offline(monkeypatch):
     finally:
         outbound._cache.clear()
         outbound.set_offline(was_offline)
+
+
+def test_settings_toggle_flips_killswitch(client):
+    """Der Offline-Schalter in den Einstellungen zieht die modulweite Flagge
+    sofort nach (kein Neustart nötig) – das war die Ursache des „ohne Funktion".
+    """
+    from app import outbound
+    try:
+        client.put("/api/settings", json={"offline_mode": True})
+        assert outbound.is_offline() is True
+        assert client.get("/api/settings").json()["offline_mode"] is True
+
+        client.put("/api/settings", json={"offline_mode": False})
+        assert outbound.is_offline() is False
+        assert client.get("/api/settings").json()["offline_mode"] is False
+    finally:
+        # Auslieferungszustand wiederherstellen, damit andere Tests offline sind.
+        client.put("/api/settings", json={"offline_mode": True})

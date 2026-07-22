@@ -45,7 +45,9 @@ STATUS_FILE = "status.json"
 # Anfragen pro Stunde und IP.
 CHECK_INTERVAL_SECONDS = 6 * 3600
 
-_latest: dict = {"version": None, "checked_at": 0.0, "error": None}
+_latest: dict = {"version": None, "checked_at": 0.0, "error": None, "steps": []}
+
+PROGRESS_FILE = "progress.json"
 
 
 # --------------------------------------------------------------------------
@@ -84,19 +86,30 @@ def check_latest(force: bool = False) -> dict:
     now = time.time()
     if not force and _latest["version"] and (now - _latest["checked_at"] < CHECK_INTERVAL_SECONDS):
         return dict(_latest)
+    # Schritt-Protokoll der Prüfung – speist den Ladebalken/das Log der
+    # Oberfläche (Suche gestartet → erreichbar/nicht → Version gefunden).
+    url = outbound.PROVIDERS["github_version"]["base"]
+    steps: list[dict] = [{"phase": "search", "ok": None, "message": f"Suche gestartet: {url}"}]
     try:
         # allow_offline: der Versionscheck darf seine fest verdrahtete, auf der
         # Allowlist stehende GitHub-URL auch im Offline-Modus erreichen – sonst
         # wäre der Update-Tab bei aktivem Kill-Switch dauerhaft funktionslos.
         data = outbound.fetch_json("github_version", {"ref": "main"}, allow_offline=True)
+        steps.append({"phase": "reachable", "ok": True, "message": "GitHub erreichbar"})
         content = base64.b64decode(data.get("content", "")).decode("utf-8", "replace")
         m = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', content)
         if not m:
             raise ValueError("Versionszeile nicht gefunden")
-        _latest.update(version=m.group(1), checked_at=now, error=None)
-        log.info("Versionsprüfung: Repo=%s, lokal=%s", m.group(1), APP_VERSION)
+        version = m.group(1)
+        newer = _is_newer(version, APP_VERSION)
+        steps.append({"phase": "version", "ok": True,
+                      "message": (f"Neue Version {version} verfügbar" if newer
+                                  else f"Aktuell ({version}), kein Update nötig")})
+        _latest.update(version=version, checked_at=now, error=None, steps=steps)
+        log.info("Versionsprüfung: Repo=%s, lokal=%s", version, APP_VERSION)
     except Exception as exc:  # noqa: BLE001 – jede Ursache wird als Text gemeldet
-        _latest.update(checked_at=now, error=str(exc))
+        steps.append({"phase": "reachable", "ok": False, "message": f"Nicht erreichbar: {exc}"})
+        _latest.update(checked_at=now, error=str(exc), steps=steps)
         log.warning("Versionsprüfung fehlgeschlagen: %s", exc)
     return dict(_latest)
 
@@ -139,6 +152,12 @@ def pending_request() -> Optional[dict]:
     return _read_json(REQUEST_FILE)
 
 
+def update_progress() -> Optional[dict]:
+    """Fortschritt des laufenden Host-Vorgangs (vom Updater-Skript geschrieben).
+    Enthält Phase, Prozent und ein Schritt-Protokoll (Download/Installation)."""
+    return _read_json(PROGRESS_FILE)
+
+
 def status() -> dict:
     latest = check_latest(force=False)
     return {
@@ -149,7 +168,9 @@ def status() -> dict:
         "checked_at": (datetime.fromtimestamp(latest["checked_at"], timezone.utc).isoformat()
                        if latest.get("checked_at") else None),
         "check_error": latest.get("error"),
+        "check_steps": latest.get("steps") or [],
         "pending": pending_request(),
+        "progress": update_progress(),
         "last_action": last_status(),
     }
 
@@ -183,5 +204,18 @@ def request_action(action: str, actor: Optional[str] = None) -> dict:
     tmp = d / (REQUEST_FILE + ".part")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
     tmp.replace(d / REQUEST_FILE)          # atomar sichtbar machen
+
+    # Anfangs-Fortschritt sofort sichtbar machen, bevor das Host-Skript den
+    # Timer-Lauf abwartet – sonst wirkte die Oberfläche nach dem Klick tot.
+    progress = {
+        "action": action, "running": True, "percent": 5, "phase": "queued",
+        "message": "Angefordert – wartet auf den Host-Updater",
+        "steps": [{"phase": "queued", "ok": None,
+                   "message": f"{action.capitalize()} angefordert von {actor or 'unbekannt'}"}],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    ptmp = d / (PROGRESS_FILE + ".part")
+    ptmp.write_text(json.dumps(progress, ensure_ascii=False), "utf-8")
+    ptmp.replace(d / PROGRESS_FILE)
     log.warning("%s angefordert von %s (Sicherung: %s)", action, actor, safety_backup)
     return payload

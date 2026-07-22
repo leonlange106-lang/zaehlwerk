@@ -1,21 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Tabs, Card, Table, Group, Badge, Text, Button, ActionIcon, Skeleton, Alert,
   Stack, Select, Collapse, Divider, Textarea, Code, ScrollArea, TextInput, CopyButton,
+  Progress, ThemeIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconAlertTriangle, IconTrash, IconChevronDown, IconChevronUp, IconPlayerPlay,
-  IconRefresh,
+  IconRefresh, IconCheck, IconX, IconClockHour4, IconLoader2,
 } from '@tabler/icons-react';
 import { useApiData } from '../../api/useApi';
 import { api, apiPost, apiPatch, ApiError } from '../../api/client';
 import type {
   AdminUserStatus, AdminSession, AdminDatabase, DatabaseAccessEntry, User,
-  LogEntry, QueryResult, UpdateStatus,
+  LogEntry, QueryResult, UpdateStatus, UpdateStep,
 } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
-import { fmtBytes } from '../../util/format';
+import { fmtBytes, fmtDate } from '../../util/format';
 import { MqttTab } from './MqttTab';
 
 function relTime(iso: string | null): string {
@@ -396,6 +397,15 @@ function UpdateTab() {
   const { data, loading, reload } = useApiData<UpdateStatus>('/api/update/status');
   const [busy, setBusy] = useState(false);
 
+  // Solange ein Vorgang läuft (oder eine Anforderung ansteht), im Takt pollen,
+  // damit Ladebalken und Schritt-Log live mitlaufen.
+  const running = !!data?.progress?.running || !!data?.pending;
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => void reload(), 2500);
+    return () => clearInterval(t);
+  }, [running, reload]);
+
   async function act(path: string, msg: string) {
     setBusy(true);
     try { await apiPost(path); notifications.show({ color: 'teal', message: msg }); void reload(); }
@@ -406,20 +416,85 @@ function UpdateTab() {
   if (!data?.supported) {
     return <Card><Text c="dimmed" size="sm">Der Selbst-Update-Weg ist in dieser Umgebung nicht eingerichtet.</Text></Card>;
   }
+
+  const progress = data.progress;
+  // Schritt-Protokoll: läuft/lief ein Vorgang, dessen Schritte zeigen; sonst die
+  // Schritte der letzten Versionsprüfung.
+  const steps = progress?.steps?.length ? progress.steps : (data.check_steps ?? []);
+  const failed = progress && !progress.running && progress.phase === 'failed';
+
   return (
     <Card>
       <Text fw={600} mb="sm">Selbst-Update</Text>
       <Table>
         <Table.Tbody>
           <Table.Tr><Table.Td>Installiert</Table.Td><Table.Td ta="right"><Code>{data.current}</Code></Table.Td></Table.Tr>
-          <Table.Tr><Table.Td>Verfügbar</Table.Td><Table.Td ta="right"><Code>{data.latest ?? '–'}</Code></Table.Td></Table.Tr>
+          <Table.Tr>
+            <Table.Td>Verfügbar</Table.Td>
+            <Table.Td ta="right">
+              <Group gap={6} justify="flex-end">
+                <Code>{data.latest ?? '–'}</Code>
+                {data.update_available && <Badge size="xs" color="teal" variant="light">neu</Badge>}
+              </Group>
+            </Table.Td>
+          </Table.Tr>
         </Table.Tbody>
       </Table>
+
       <Group mt="sm">
         <Button size="xs" variant="light" loading={busy} onClick={() => void act('/api/update/check', 'Prüfung ausgelöst')}>Auf Updates prüfen</Button>
-        <Button size="xs" loading={busy} disabled={!data.update_available} onClick={() => void act('/api/update/run', 'Update angefordert')}>Aktualisieren</Button>
-        <Button size="xs" variant="default" loading={busy} onClick={() => void act('/api/update/rollback', 'Rollback angefordert')}>Zur Vorversion</Button>
+        <Button size="xs" loading={busy || !!progress?.running} disabled={!data.update_available || !!progress?.running} onClick={() => void act('/api/update/run', 'Update angefordert')}>Aktualisieren</Button>
+        <Button size="xs" variant="default" loading={busy} disabled={!!progress?.running} onClick={() => void act('/api/update/rollback', 'Rollback angefordert')}>Zur Vorversion</Button>
       </Group>
+
+      {data.check_error && !progress && (
+        <Alert mt="sm" color="orange" icon={<IconAlertTriangle size={16} />}>
+          Versionsprüfung fehlgeschlagen: {data.check_error}
+        </Alert>
+      )}
+
+      {progress && (
+        <Stack gap={6} mt="md">
+          <Group justify="space-between">
+            <Text size="sm" fw={500}>
+              {progress.action === 'rollback' ? 'Rollback' : 'Update'} · {progress.message}
+            </Text>
+            <Text size="xs" c="dimmed">{progress.percent}%</Text>
+          </Group>
+          <Progress
+            value={progress.percent} animated={progress.running}
+            color={failed ? 'red' : progress.running ? 'blue' : 'teal'}
+          />
+        </Stack>
+      )}
+
+      {steps.length > 0 && (
+        <Stack gap={4} mt="md">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Protokoll</Text>
+          {steps.map((s, i) => <StepRow key={i} step={s} active={!!progress?.running && i === steps.length - 1} />)}
+        </Stack>
+      )}
+
+      {data.last_action && !progress?.running && (
+        <Text size="xs" c="dimmed" mt="sm">
+          Letzter Vorgang: {data.last_action.action} · {data.last_action.ok ? 'erfolgreich' : 'fehlgeschlagen'}
+          {data.last_action.finished_at ? ` (${fmtDate(data.last_action.finished_at)})` : ''}
+        </Text>
+      )}
     </Card>
+  );
+}
+
+function StepRow({ step, active }: { step: UpdateStep; active: boolean }) {
+  const { icon, color } = active
+    ? { icon: <IconLoader2 size={12} />, color: 'blue' as const }
+    : step.ok === true ? { icon: <IconCheck size={12} />, color: 'teal' as const }
+      : step.ok === false ? { icon: <IconX size={12} />, color: 'red' as const }
+        : { icon: <IconClockHour4 size={12} />, color: 'gray' as const };
+  return (
+    <Group gap={8} wrap="nowrap" align="center">
+      <ThemeIcon size="sm" variant="light" color={color}>{icon}</ThemeIcon>
+      <Text size="sm" style={{ wordBreak: 'break-word' }}>{step.message}</Text>
+    </Group>
   );
 }
