@@ -6,6 +6,7 @@ struct DashboardView: View {
     @Environment(AuthManager.self) private var auth
     @State private var model = DashboardViewModel()
     @State private var showingAddSystem = false
+    @State private var showingCustomize = false
 
     private var canWrite: Bool { auth.status?.canWrite ?? false }
     private let columns = [GridItem(.adaptive(minimum: 320), spacing: 16)]
@@ -34,6 +35,14 @@ struct DashboardView: View {
                         }
                     }
                     .padding(.top, 60)
+                } else if !model.tiles.isEmpty, let data = model.data {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(model.tiles) { tile in
+                            tileView(tile, data: data)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 4)
                 } else {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(model.systems) { system in
@@ -55,13 +64,17 @@ struct DashboardView: View {
             .toolbar {
                 if canWrite {
                     ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            Haptics.tap()
-                            showingAddSystem = true
+                        Menu {
+                            Button {
+                                Haptics.tap(); showingAddSystem = true
+                            } label: { Label("System anlegen", systemImage: "plus") }
+                            Button {
+                                Haptics.tap(); showingCustomize = true
+                            } label: { Label("Dashboard anpassen", systemImage: "square.grid.2x2") }
                         } label: {
-                            Image(systemName: "plus")
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel("System anlegen")
+                        .accessibilityLabel("Aktionen")
                     }
                 }
             }
@@ -76,6 +89,29 @@ struct DashboardView: View {
                     Task { await model.refresh() }
                 }
             }
+            .sheet(isPresented: $showingCustomize) {
+                DashboardCustomizeView(tiles: model.tiles, systems: model.systems) {
+                    Task { await model.refresh() }
+                }
+            }
+        }
+    }
+
+    /// Kachel rendern; verweist auf ein einzelnes System, wird sie zur
+    /// Detailansicht verlinkt.
+    @ViewBuilder
+    private func tileView(_ tile: DashboardTile, data: DashboardData) -> some View {
+        let ids = tile.resolvedSystemIDs()
+        if ids.count == 1, let system = model.systems.first(where: { $0.id == ids[0] }) {
+            NavigationLink {
+                SystemDetailView(system: system)
+            } label: {
+                DashboardTileView(tile: tile, data: data)
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.selection() })
+        } else {
+            DashboardTileView(tile: tile, data: data)
         }
     }
 }

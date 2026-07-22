@@ -15,6 +15,8 @@ final class DashboardViewModel {
     private(set) var isShowingCached = false
     var errorMessage: String?
 
+    private(set) var tiles: [DashboardTile] = []
+
     var systems: [DashboardSystem] { data?.systems ?? [] }
     var recent: [RecentReading] { data?.recent ?? [] }
 
@@ -44,6 +46,11 @@ final class DashboardViewModel {
             isShowingCached = false
             errorMessage = nil
             cache.save(fresh, for: CacheStore.Key.dashboard)
+            // Kachel-Layout separat holen; scheitert es (z. B. offline), bleibt
+            // die Karten-Übersicht als Rückfall bestehen.
+            if let layout = try? await api.fetchDashboardLayout() {
+                tiles = layout.tiles
+            }
         } catch let error as APIError {
             handle(error)
         } catch {

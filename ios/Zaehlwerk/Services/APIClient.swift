@@ -41,6 +41,10 @@ final class APIClient: @unchecked Sendable {
         try await send(method: "PATCH", path: path, query: [:], body: body)
     }
 
+    func put<B: Encodable, T: Decodable>(_ path: String, body: B) async throws -> T {
+        try await send(method: "PUT", path: path, query: [:], body: body)
+    }
+
     @discardableResult
     func postNoContent<B: Encodable>(_ path: String, body: B) async throws -> Bool {
         _ = try await raw(method: "POST", path: path, query: [:], body: body)

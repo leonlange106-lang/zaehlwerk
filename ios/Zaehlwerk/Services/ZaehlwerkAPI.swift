@@ -123,6 +123,21 @@ extension APIClient {
         try await get("/api/dashboard/data", query: ["months": String(months)])
     }
 
+    // MARK: - Dashboard-Layout (Kacheln)
+
+    func fetchDashboardLayout() async throws -> DashboardLayoutResponse {
+        try await get("/api/user/dashboard")
+    }
+
+    @discardableResult
+    func saveDashboardLayout(_ tiles: [DashboardTile]) async throws -> DashboardLayoutResponse {
+        try await put("/api/user/dashboard", body: DashboardLayoutRequest(tiles: tiles))
+    }
+
+    func resetDashboardLayout() async throws {
+        try await delete("/api/user/dashboard")
+    }
+
     // MARK: - Mandanten-Datenbanken (Multi-DB)
 
     func fetchDatabases() async throws -> DatabaseListResponse {
