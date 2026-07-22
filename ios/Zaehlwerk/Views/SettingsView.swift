@@ -15,6 +15,7 @@ struct SettingsView: View {
             List {
                 accountSection
                 databaseSection
+                toolsSection
                 adminSection
                 securitySection
                 connectionSection
@@ -69,6 +70,23 @@ struct SettingsView: View {
                 Text("Datenbank")
             } footer: {
                 Text("Wechsle zwischen den Datenbanken, auf die du Zugriff hast.")
+            }
+        }
+    }
+
+    // MARK: - Werkzeuge
+
+    private var toolsSection: some View {
+        Section("Werkzeuge") {
+            NavigationLink {
+                GasCalculatorView()
+            } label: {
+                Label("Gas-Rechner (m³ ↔ kWh)", systemImage: "flame")
+            }
+            NavigationLink {
+                TariffUploadView()
+            } label: {
+                Label("Tarif-Dokument scannen", systemImage: "doc.text.viewfinder")
             }
         }
     }

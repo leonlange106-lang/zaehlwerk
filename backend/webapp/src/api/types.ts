@@ -339,7 +339,40 @@ export interface TariffPlan {
   arbeitspreis: number;
   grundpreis: number;
   notiz?: string | null;
+  contract_document_url?: string | null;
+  notice_period_days?: number | null;
+  notice_deadline?: string | null;
+  notice_due_soon?: boolean;
   aktiv: boolean;
+}
+
+export interface TariffOcrSuggestion {
+  anbieter?: string | null;
+  arbeitspreis?: number | null;
+  grundpreis?: number | null;
+  gueltig_ab?: string | null;
+  gueltig_bis?: string | null;
+  notice_period_days?: number | null;
+}
+
+export interface TariffUploadResult {
+  document_url: string;
+  filename: string;
+  text_excerpt?: string | null;
+  ocr_available: boolean;
+  suggestion: TariffOcrSuggestion;
+}
+
+export interface TariffExpiring {
+  tariff_id: string;
+  system_id: string;
+  system_name: string;
+  name?: string | null;
+  anbieter?: string | null;
+  gueltig_bis: string;
+  notice_period_days: number;
+  notice_deadline: string;
+  days_until_deadline: number;
 }
 
 export interface AuditEntry {

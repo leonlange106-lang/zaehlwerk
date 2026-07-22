@@ -32,6 +32,13 @@ extension APIClient {
         try await get("/api/changelog")
     }
 
+    // MARK: - Tarif-Vertragsunterlagen
+
+    func uploadTariffDocument(data: Data, filename: String, mimeType: String) async throws -> TariffUploadResult {
+        try await uploadDocument(path: "/api/tariffs/upload", fileData: data,
+                                 filename: filename, mimeType: mimeType)
+    }
+
     func changePassword(current: String, new: String) async throws -> User {
         try await post("/api/auth/change-password",
                        body: ChangePasswordRequest(current_password: current, new_password: new))

@@ -63,6 +63,69 @@ final class APIClient: @unchecked Sendable {
         return true
     }
 
+    // MARK: - Multipart-Upload (Dokumente)
+
+    /// Lädt eine Datei (PDF/Bild) als multipart/form-data hoch und dekodiert die
+    /// Antwort. Trägt dieselben Auth-/CF-/DB-Header wie alle anderen Aufrufe.
+    func uploadDocument<T: Decodable>(
+        path: String, fileData: Data, filename: String, mimeType: String
+    ) async throws -> T {
+        guard let base = server.baseURL else { throw APIError.notConfigured }
+        var baseString = base.absoluteString
+        if baseString.hasSuffix("/") { baseString.removeLast() }
+        guard let url = URL(string: baseString + path) else { throw APIError.invalidURL }
+
+        let boundary = "ZW-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ s: String) { body.append(s.data(using: .utf8)!) }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        append("Content-Type: \(mimeType)\r\n\r\n")
+        body.append(fileData)
+        append("\r\n--\(boundary)--\r\n")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = tokens.token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let id = tokens.cfClientId, let secret = tokens.cfClientSecret {
+            request.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+            request.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+        }
+        if let dbID = server.activeDatabaseID {
+            request.setValue(dbID, forHTTPHeaderField: "X-Zaehlwerk-Database")
+        }
+        request.httpBody = body
+
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError where error.code == .notConnectedToInternet {
+            throw APIError.offline
+        } catch {
+            throw APIError.transport(error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.server(status: -1, detail: nil)
+        }
+        syncToken(from: http)
+        switch http.statusCode {
+        case 200...299:
+            do { return try JSONCoding.decoder.decode(T.self, from: data) }
+            catch { throw APIError.decoding(error) }
+        case 401: throw APIError.unauthorized
+        case 403:
+            let parsed = try? JSONCoding.decoder.decode(APIErrorBody.self, from: data)
+            throw APIError.forbidden(parsed?.detail ?? "Keine Berechtigung.")
+        default:
+            let parsed = try? JSONCoding.decoder.decode(APIErrorBody.self, from: data)
+            throw APIError.server(status: http.statusCode, detail: parsed?.detail)
+        }
+    }
+
     // MARK: - Kern
 
     private func send<B: Encodable, T: Decodable>(
