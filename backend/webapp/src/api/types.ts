@@ -86,3 +86,56 @@ export interface DashboardData {
   months: number;
   recent: RecentReading[];
 }
+
+export interface Reading {
+  id: string;
+  system_id: string;
+  datum: string;
+  value: number;
+  cost?: number | null;
+  meter_replaced: boolean;
+  meter_start?: number | null;
+  note?: string | null;
+  source: string;
+  consumption?: number | null;
+  consumption_per_day?: number | null;
+  is_outlier: boolean;
+  cost_effective?: number | null;
+  cost_estimated: boolean;
+}
+
+export interface SystemStats {
+  total_consumption: number;
+  total_cost: number;
+  total_days: number;
+  avg_per_day?: number | null;
+  cost_per_day?: number | null;
+  cost_per_unit?: number | null;
+  min_per_day?: number | null;
+  max_per_day?: number | null;
+  total_cost_tariff?: number | null;
+  avg_price_effective?: number | null;
+  coverage_ratio: number;
+}
+
+export interface ChartData {
+  system_id: string;
+  name: string;
+  unit: string;
+  color: string;
+  labels: string[];
+  values: (number | null)[];
+  consumption: (number | null)[];
+  consumption_per_day: (number | null)[];
+  outliers: boolean[];
+  meter_replaced: boolean[];
+}
+
+// Antwort von POST /api/ocr/scan
+export interface OcrResult {
+  value?: number | null;
+  confidence?: number | null;
+  datum?: string | null;
+  previous?: number | null;
+  text?: string | null;
+}

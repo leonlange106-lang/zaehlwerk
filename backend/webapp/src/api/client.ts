@@ -48,6 +48,32 @@ export async function api<T = unknown>(path: string, opts: RequestInit = {}): Pr
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+// Multipart-Upload (z. B. OCR-Foto). Bewusst OHNE Content-Type-Header, damit der
+// Browser die multipart-Boundary selbst setzt.
+export async function apiUpload<T = unknown>(path: string, form: FormData): Promise<T> {
+  const url = path.replace(/^\//, '');
+  const headers: Record<string, string> = {};
+  const db = localStorage.getItem(ACTIVE_DB_KEY);
+  if (db) headers['X-Zaehlwerk-Database'] = db;
+
+  const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: form, headers });
+  if (res.status === 401) {
+    unauthorizedHandler?.();
+    throw new ApiError('Sitzung abgelaufen – bitte neu anmelden', 401);
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      /* kein JSON-Body */
+    }
+    throw new ApiError(detail || 'Fehler', res.status);
+  }
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
 export const apiGet = <T>(path: string) => api<T>(path);
 export const apiPost = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });
