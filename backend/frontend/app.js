@@ -4,8 +4,14 @@
 const { createApp, reactive } = Vue;
 
 /* ---------- Version & Changelog ---------- */
-const APP_VERSION = "3.24.0";
+const APP_VERSION = "3.26.0";
 const APP_CHANGELOG = [
+  { v: "3.26.0", d: "22.07.2026", items: [
+    "Mandanten-Datenbanken: jeder Nutzer erhält eine eigene, isolierte Datenbank. Die bestehende Datenbank bleibt als Standard-Datenbank des Administrators erhalten",
+    "Datenbank-Freigaben: Administratoren können Konten den Zugriff auf fremde Datenbanken erteilen – als Eigentümer, mit Schreib- oder mit Nur-Lese-Recht (Admin-Tools → Monitoring → Datenbanken)",
+    "Admin-Monitoring (Admin-Tools → Monitoring): Live-Status der Konten (online/zuletzt aktiv), Sicherheits-Metriken (Zwei-Faktor eingerichtet/ausstehend, Passwort temporär/dauerhaft) sowie aktive Sitzungen – einzeln oder je Konto per Admin-Override zwangsweise beendbar",
+    "Sicherheit: Sitzungen werden jetzt serverseitig geführt; das Abmelden beendet die Sitzung sofort, ein Admin kann fremde Sitzungen erzwungen schließen",
+  ] },
   { v: "3.24.0", d: "21.07.2026", items: [
     "Zwei-Faktor-Authentifizierung (TOTP): in den Einstellungen unter „Zwei-Faktor“ einrichten (QR-Code für Google/Microsoft Authenticator, Apple Passwörter u. a.). Ist sie aktiv, verlangt jede Anmeldung zusätzlich einen 6-stelligen Code",
     "Passwort ändern: in den Einstellungen unter „Passwort ändern“ – mit Prüfung des bisherigen Passworts und serverseitigen Komplexitätsregeln",
@@ -2591,6 +2597,15 @@ createApp({
     sqlResult: null,
     sqlError: null,
     sqlBusy: false,
+    /* Admin: Monitoring (Kontostatus, Sitzungen, DB-Verwaltung) */
+    monUsers: [],
+    monSessions: [],
+    monDbs: [],
+    monBusy: false,
+    dbAccessOpen: null,          // aktuell aufgeklappte DB-Zugriffsmatrix
+    dbAccess: [],                // Zugriffe der aufgeklappten DB
+    grantForm: { user_id: "", role: "read_only" },
+    newDb: { name: "", owner_user_id: "", busy: false },
   }),
   computed: {
     visibleSystems() { return this.systems.filter((s) => this.showArchived || s.aktiv); },
@@ -3867,6 +3882,86 @@ createApp({
         this.notify(`Zwischenspeicher geleert (${r.cleared})`, "ok");
       } catch (e) { this.notify(e.message, "err"); }
     },
+    /* ---------- Admin: Monitoring & Datenbank-Verwaltung ---------- */
+    async loadMonitoring() {
+      this.monBusy = true;
+      try {
+        const [u, s, d] = await Promise.all([
+          api("/api/admin/monitoring/users"),
+          api("/api/admin/monitoring/sessions"),
+          api("/api/admin/databases"),
+        ]);
+        this.monUsers = u; this.monSessions = s; this.monDbs = d;
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.monBusy = false; }
+    },
+    async terminateSession(s) {
+      if (!confirm("Diese Sitzung beenden?")) return;
+      try {
+        await api(`/api/admin/monitoring/sessions/${s.jti}`, { method: "DELETE" });
+        this.notify("Sitzung beendet", "ok");
+        this.loadMonitoring();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async terminateUserSessions(u) {
+      if (!confirm(`Alle Sitzungen von „${u.display_name}“ beenden?`)) return;
+      try {
+        const r = await api(`/api/admin/monitoring/users/${u.id}/logout`, { method: "POST" });
+        this.notify(`${r.terminated} Sitzung(en) beendet`, "ok");
+        this.loadMonitoring();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async toggleDbAccess(db) {
+      if (this.dbAccessOpen === db.id) { this.dbAccessOpen = null; return; }
+      try {
+        this.dbAccess = await api(`/api/admin/databases/${db.id}/access`);
+        this.dbAccessOpen = db.id;
+        this.grantForm = { user_id: "", role: "read_only" };
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async grantAccess(db) {
+      try {
+        await api(`/api/admin/databases/${db.id}/access`, {
+          method: "POST", body: JSON.stringify(this.grantForm),
+        });
+        this.dbAccess = await api(`/api/admin/databases/${db.id}/access`);
+        this.notify("Zugriff gesetzt", "ok");
+        this.loadMonitoring();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async revokeAccess(db, a) {
+      try {
+        await api(`/api/admin/databases/${db.id}/access/${a.user_id}`, { method: "DELETE" });
+        this.dbAccess = await api(`/api/admin/databases/${db.id}/access`);
+        this.notify("Zugriff entzogen", "ok");
+        this.loadMonitoring();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    roleLabel(role) {
+      const r = (this.authRoles || []).find((x) => x.key === role);
+      return r ? r.label : role;
+    },
+    dbRoleLabel(role) {
+      return { owner: "Owner", read_write: "Schreiben", read_only: "Lesen" }[role] || role;
+    },
+    userName(id) {
+      const u = this.monUsers.find((x) => x.id === id);
+      return u ? u.display_name : id;
+    },
+    shortAgent(ua) {
+      if (!ua) return "unbekannt";
+      const m = ua.match(/(iPhone|iPad|Android|Macintosh|Windows|Linux)/);
+      return m ? m[1] : ua.slice(0, 24);
+    },
+    fmtDateTime(iso) {
+      if (!iso) return "–";
+      const d = new Date(iso);
+      if (isNaN(d)) return "–";
+      return d.toLocaleString("de-DE", {
+        day: "2-digit", month: "2-digit", year: "2-digit",
+        hour: "2-digit", minute: "2-digit",
+      });
+    },
     revertSettings() { this.appSettingsDraft = { ...this.appSettings }; this.settingsErrors = {}; },
     fmtBytes(n) {
       if (!n) return "0 B";
@@ -4265,6 +4360,7 @@ createApp({
         <button :class="{active: adminTab==='system'}"   @click="adminTab='system'">System</button>
         <button :class="{active: adminTab==='netzwerk'}" @click="adminTab='netzwerk'">Netzwerk</button>
         <button :class="{active: adminTab==='zugriff'}"  @click="adminTab='zugriff'">Zugriff</button>
+        <button :class="{active: adminTab==='monitoring'}" @click="adminTab='monitoring'; loadMonitoring()">Monitoring</button>
         <button :class="{active: adminTab==='daten'}"    @click="adminTab='daten'; loadBackupStatus()">Datenmanagement</button>
         <button v-if="updateStatus && updateStatus.supported" :class="{active: adminTab==='update'}" @click="adminTab='update'; loadUpdateStatus()">Update</button>
         <button :class="{active: adminTab==='diag'}"     @click="adminTab='diag'">Diagnose</button>
@@ -4634,6 +4730,101 @@ createApp({
           <button class="btn btn-primary"
                   :disabled="settingsSaving || !settingsDirty() || settingsErrorCount() > 0"
                   @click="saveSettings">Speichern</button>
+        </div>
+      </template>
+
+      <!-- Monitoring: Kontostatus, Sitzungen, Datenbanken -->
+      <template v-else-if="adminTab==='monitoring'">
+        <div class="card set-card">
+          <h3>Konten &amp; Status</h3>
+          <p class="hint">Live-Status, Sicherheits-Metriken und aktive Sitzungen je Konto.
+            „Abmelden“ beendet serverseitig alle Sitzungen des Kontos.</p>
+          <div class="settings-actions">
+            <button class="btn btn-sm" @click="loadMonitoring">↻ Aktualisieren</button>
+          </div>
+          <table class="info-table mon-table" v-if="monUsers.length">
+            <thead><tr>
+              <th>Konto</th><th>Rolle</th><th>2FA</th><th>Passwort</th>
+              <th>Zuletzt aktiv</th><th class="num">Sitzungen</th><th></th>
+            </tr></thead>
+            <tr v-for="u in monUsers" :key="u.id">
+              <td>
+                <span class="mon-dot" :class="{ on: u.online }" :title="u.online ? 'Online' : 'Offline'"></span>
+                {{ u.display_name }}
+                <small class="bk-age"> · {{ u.username }}{{ u.source === 'homeassistant' ? ' · HA' : '' }}</small>
+              </td>
+              <td>{{ roleLabel(u.role) }}</td>
+              <td><span class="badge" :class="u.two_factor_enabled ? 'badge-ok' : 'badge-warn'">{{ u.two_factor_status }}</span></td>
+              <td><span class="badge" :class="u.password_status === 'temporär' ? 'badge-warn' : 'badge-muted'">{{ u.password_status }}</span></td>
+              <td><small>{{ u.last_seen ? fmtDateTime(u.last_seen) : '–' }}</small></td>
+              <td class="num">{{ u.active_sessions }}</td>
+              <td class="num">
+                <button class="btn btn-sm" :disabled="!u.active_sessions" @click="terminateUserSessions(u)">Abmelden</button>
+              </td>
+            </tr>
+          </table>
+          <div class="hint" v-else>Noch keine Konten.</div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Aktive Sitzungen</h3>
+          <p class="hint">Alle offenen Sitzungen. „Beenden“ widerruft die Sitzung sofort (Admin-Override).</p>
+          <table class="info-table mon-table" v-if="monSessions.length">
+            <thead><tr><th>Konto</th><th>Gerät</th><th>IP</th><th>Zuletzt</th><th></th></tr></thead>
+            <tr v-for="s in monSessions" :key="s.jti">
+              <td>{{ s.username }} <span v-if="s.current" class="badge badge-ok">aktuell</span></td>
+              <td><small>{{ shortAgent(s.user_agent) }}</small></td>
+              <td><small>{{ s.ip || '–' }}</small></td>
+              <td><small>{{ fmtDateTime(s.last_seen) }}</small></td>
+              <td class="num"><button class="btn btn-sm" :disabled="s.current" @click="terminateSession(s)">Beenden</button></td>
+            </tr>
+          </table>
+          <div class="hint" v-else>Keine aktiven Sitzungen.</div>
+        </div>
+
+        <div class="card set-card">
+          <h3>Datenbanken</h3>
+          <p class="hint">Mandanten-Datenbanken, Speichergröße und Zuordnung von Konten
+            (Owner / Schreiben / Lesen). Jeder Nutzer besitzt eine eigene isolierte Datenbank.</p>
+          <div class="settings-actions">
+            <button class="btn btn-sm" :disabled="backupBusy" @click="runBackup">{{ backupBusy ? 'Sichert …' : 'Sicherung erstellen' }}</button>
+          </div>
+          <table class="info-table mon-table" v-if="monDbs.length">
+            <thead><tr><th>Datenbank</th><th>Eigentümer</th><th class="num">Größe</th><th class="num">Geteilt</th><th></th></tr></thead>
+            <template v-for="db in monDbs" :key="db.id">
+              <tr>
+                <td>{{ db.name }} <span v-if="db.is_default" class="badge badge-muted">Standard</span></td>
+                <td><small>{{ db.owner_name || '–' }}</small></td>
+                <td class="num">{{ fmtBytes(db.size_bytes) }}</td>
+                <td class="num">{{ db.shared_with }}</td>
+                <td class="num"><button class="btn btn-sm" @click="toggleDbAccess(db)">{{ dbAccessOpen === db.id ? 'Schließen' : 'Zugriff' }}</button></td>
+              </tr>
+              <tr v-if="dbAccessOpen === db.id">
+                <td colspan="5">
+                  <div class="mon-access">
+                    <div v-for="a in dbAccess" :key="a.user_id" class="mon-access-row">
+                      <span>{{ userName(a.user_id) }}</span>
+                      <span class="badge" :class="a.role === 'owner' ? 'badge-ok' : 'badge-muted'">{{ dbRoleLabel(a.role) }}</span>
+                      <button v-if="!a.implicit" class="btn btn-sm" @click="revokeAccess(db, a)">Entziehen</button>
+                    </div>
+                    <div class="mon-grant">
+                      <select class="select" v-model="grantForm.user_id">
+                        <option value="">Konto wählen …</option>
+                        <option v-for="u in monUsers" :key="u.id" :value="u.id">{{ u.display_name }}</option>
+                      </select>
+                      <select class="select" v-model="grantForm.role">
+                        <option value="read_only">Lesen</option>
+                        <option value="read_write">Schreiben</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                      <button class="btn btn-primary btn-sm" :disabled="!grantForm.user_id" @click="grantAccess(db)">Zuweisen</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </table>
+          <div class="hint" v-else>Keine Datenbanken.</div>
         </div>
       </template>
 
