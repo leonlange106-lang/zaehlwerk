@@ -16,6 +16,7 @@ import type {
 } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtBytes } from '../../util/format';
+import { MqttTab } from './MqttTab';
 
 function relTime(iso: string | null): string {
   if (!iso) return '–';
@@ -38,6 +39,7 @@ export function AdminView() {
         <Tabs.Tab value="diagnostics">Diagnose</Tabs.Tab>
         <Tabs.Tab value="query">Abfrage</Tabs.Tab>
         <Tabs.Tab value="logs">Protokoll</Tabs.Tab>
+        <Tabs.Tab value="mqtt">MQTT</Tabs.Tab>
         <Tabs.Tab value="update">Update</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="monitoring"><MonitoringTab /></Tabs.Panel>
@@ -46,6 +48,7 @@ export function AdminView() {
       <Tabs.Panel value="diagnostics"><DiagnosticsTab /></Tabs.Panel>
       <Tabs.Panel value="query"><QueryTab /></Tabs.Panel>
       <Tabs.Panel value="logs"><LogsTab /></Tabs.Panel>
+      <Tabs.Panel value="mqtt"><MqttTab /></Tabs.Panel>
       <Tabs.Panel value="update"><UpdateTab /></Tabs.Panel>
     </Tabs>
   );

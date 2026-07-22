@@ -1,10 +1,11 @@
 import { AppShell, Burger, Group, ScrollArea, NavLink, ActionIcon, Title, Menu, Text, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { Spotlight, spotlight, type SpotlightActionData } from '@mantine/spotlight';
 import {
   IconGauge, IconClipboardList, IconReceipt2, IconChartHistogram, IconHistory,
-  IconSettings, IconShieldLock, IconSun, IconMoon, IconLogout, IconUser,
+  IconSettings, IconShieldLock, IconSun, IconMoon, IconLogout, IconUser, IconSearch,
 } from '@tabler/icons-react';
-import { NavLink as RouterLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 interface NavItem {
@@ -28,9 +29,30 @@ export function AppLayout() {
   const [opened, { toggle, close }] = useDisclosure(false);
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { user, isAdmin, logout } = useAuth();
 
+  const spotlightActions: SpotlightActionData[] = NAV
+    .filter((i) => !i.adminOnly || isAdmin)
+    .map((i) => {
+      const Icon = i.icon;
+      return {
+        id: i.to,
+        label: i.label,
+        onClick: () => navigate(i.to),
+        leftSection: <Icon size={18} stroke={1.6} />,
+      };
+    });
+
   return (
+    <>
+    <Spotlight
+      actions={spotlightActions}
+      shortcut="mod + K"
+      nothingFound="Nichts gefunden"
+      highlightQuery
+      searchProps={{ placeholder: 'Springe zu …' }}
+    />
     <AppShell
       header={{ height: 54 }}
       navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
@@ -43,6 +65,9 @@ export function AppLayout() {
             <Title order={4}>Zählwerk</Title>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <ActionIcon variant="default" onClick={spotlight.open} aria-label="Suche (Strg+K)">
+              <IconSearch size={18} />
+            </ActionIcon>
             <ActionIcon variant="default" onClick={toggleColorScheme} aria-label="Design umschalten">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </ActionIcon>
@@ -88,5 +113,6 @@ export function AppLayout() {
         <Outlet />
       </AppShell.Main>
     </AppShell>
+    </>
   );
 }
