@@ -74,6 +74,28 @@ export async function apiUpload<T = unknown>(path: string, form: FormData): Prom
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+// Datei-Download als Blob (Export). Trägt den DB-Header mit, damit im Multi-DB-
+// Betrieb die aktive Datenbank exportiert wird – ein einfacher <a href> täte das
+// nicht.
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const url = path.replace(/^\//, '');
+  const headers: Record<string, string> = {};
+  const db = localStorage.getItem(ACTIVE_DB_KEY);
+  if (db) headers['X-Zaehlwerk-Database'] = db;
+  const res = await fetch(url, { credentials: 'same-origin', headers });
+  if (res.status === 401) { unauthorizedHandler?.(); throw new ApiError('Sitzung abgelaufen', 401); }
+  if (!res.ok) throw new ApiError('Download fehlgeschlagen', res.status);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export const apiGet = <T>(path: string) => api<T>(path);
 export const apiPost = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });

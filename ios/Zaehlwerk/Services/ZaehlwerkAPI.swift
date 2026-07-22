@@ -23,6 +23,15 @@ extension APIClient {
         try await post("/api/auth/2fa/setup")
     }
 
+    func disableTwoFactor(password: String, code: String) async throws -> User {
+        try await post("/api/auth/2fa/disable",
+                       body: TwoFactorDisableRequest(password: password, code: code))
+    }
+
+    func fetchChangelog() async throws -> ChangelogResponse {
+        try await get("/api/changelog")
+    }
+
     func changePassword(current: String, new: String) async throws -> User {
         try await post("/api/auth/change-password",
                        body: ChangePasswordRequest(current_password: current, new_password: new))

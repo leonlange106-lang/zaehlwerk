@@ -3,13 +3,13 @@ import {
   Card, Stack, Group, Text, Badge, Button, Table, Select, Skeleton, ActionIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconRefresh, IconEyeOff } from '@tabler/icons-react';
+import { IconRefresh, IconEyeOff, IconEye } from '@tabler/icons-react';
 import { useApiData } from '../../api/useApi';
 import { apiPost, ApiError } from '../../api/client';
 import type { SystemRead } from '../../api/types';
 
 interface MqttMapped { system: string; einheit: string; topic: string; interval_label: string }
-interface MqttStatus { enabled: boolean; interval: string; mapped: MqttMapped[] }
+interface MqttStatus { enabled: boolean; interval: string; mapped: MqttMapped[]; ignored?: string[] }
 interface MqttDevice { device: string; topic: string; last_seen?: string }
 
 function notifyError(e: unknown) {
@@ -100,6 +100,25 @@ export function MqttTab() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+        )}
+
+        {(status.data?.ignored ?? []).length > 0 && (
+          <>
+            <Text size="xs" c="dimmed" mt="md" mb={4}>Ignorierte Geräte</Text>
+            <Group gap="xs" wrap="wrap">
+              {(status.data?.ignored ?? []).map((dev) => (
+                <Badge key={dev} variant="light" color="gray" pr={3}
+                       rightSection={
+                         <ActionIcon size="xs" variant="transparent" color="teal" aria-label="Wieder anzeigen"
+                                     onClick={() => void act('/api/mqtt/devices/unignore', { device: dev }, 'Wieder sichtbar')}>
+                           <IconEye size={12} />
+                         </ActionIcon>
+                       }>
+                  {dev}
+                </Badge>
+              ))}
+            </Group>
+          </>
         )}
       </Card>
     </Stack>

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   Stack, Card, Text, Group, Switch, NumberInput, TextInput, Button, Select, Badge,
   Skeleton, Table, Divider, Alert, PasswordInput, Modal, Image, Code, ActionIcon, LoadingOverlay,
+  FileInput, List,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconDownload, IconTrash, IconDatabase, IconWifiOff } from '@tabler/icons-react';
+import { IconAlertTriangle, IconDownload, IconTrash, IconDatabase, IconWifiOff, IconUpload } from '@tabler/icons-react';
 import { useApiData } from '../../api/useApi';
-import { api, apiPost, ApiError, ACTIVE_DB_KEY } from '../../api/client';
+import { api, apiPost, apiUpload, downloadFile, ApiError, ACTIVE_DB_KEY } from '../../api/client';
 import type { AppSettings, DatabaseListResponse, BackupInfo } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtBytes } from '../../util/format';
@@ -92,9 +93,96 @@ export function SettingsView() {
             <Divider my="sm" />
             <BackupList />
           </Card>
+
+          <ExportImportSection />
         </>
       )}
     </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- Export/Import
+function ExportImportSection() {
+  const systemsList = useApiData<{ id: string; name: string }[]>('/api/systems');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+
+  async function dl(path: string, filename: string, key: string) {
+    setBusy(key);
+    try { await downloadFile(path, filename); }
+    catch (e) { notifyError(e); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card>
+      <Text fw={600} mb="sm">Export &amp; Import</Text>
+      <Group wrap="wrap">
+        <Button size="xs" variant="light" leftSection={<IconDownload size={16} />}
+                loading={busy === 'zip'} onClick={() => void dl('/api/export.zip', 'zaehlwerk-export.zip', 'zip')}>
+          Komplett (ZIP)
+        </Button>
+        <Button size="xs" variant="light" leftSection={<IconDownload size={16} />}
+                loading={busy === 'csv'} onClick={() => void dl('/api/export/data.csv', 'zaehlwerk-ablesungen.csv', 'csv')}>
+          Ablesungen (CSV)
+        </Button>
+        <Button size="xs" variant="light" leftSection={<IconDownload size={16} />}
+                loading={busy === 'json'} onClick={() => void dl('/api/export/data.json', 'zaehlwerk-export.json', 'json')}>
+          Alles (JSON)
+        </Button>
+        <Button size="xs" variant="subtle" color="gray"
+                loading={busy === 'tpl'} onClick={() => void dl('/api/import/template', 'import-vorlage.csv', 'tpl')}>
+          Import-Vorlage
+        </Button>
+        <Button size="xs" onClick={() => setImportOpen(true)}>CSV importieren …</Button>
+      </Group>
+      <ImportModal
+        opened={importOpen} onClose={() => setImportOpen(false)}
+        systems={systemsList.data ?? []}
+      />
+    </Card>
+  );
+}
+
+function ImportModal({ opened, onClose, systems }: {
+  opened: boolean; onClose: () => void; systems: { id: string; name: string }[];
+}) {
+  const [systemId, setSystemId] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!systemId || !file) return;
+    setBusy(true); setError(null); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await apiUpload<{ imported: number; skipped: number; errors: string[] }>(`/api/systems/${systemId}/import`, fd);
+      setResult(res);
+      notifications.show({ color: 'teal', message: `${res.imported} Ablesungen importiert` });
+    } catch (e) { setError(e instanceof ApiError ? e.message : 'Import fehlgeschlagen'); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="CSV importieren" centered>
+      <Stack>
+        {error && <Alert color="red" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
+        <Select label="Zielsystem" placeholder="System wählen …" data={systems.map((s) => ({ value: s.id, label: s.name }))}
+                value={systemId} onChange={setSystemId} searchable />
+        <FileInput label="CSV-Datei" placeholder="Datei wählen …" accept=".csv,text/csv" value={file} onChange={setFile} leftSection={<IconUpload size={16} />} />
+        <Text size="xs" c="dimmed">Spalten: datum, wert, kosten (optional), zaehlertausch (optional), notiz (optional).</Text>
+        {result && (
+          <Alert color={result.skipped ? 'orange' : 'teal'}>
+            {result.imported} importiert, {result.skipped} übersprungen.
+            {result.errors.length > 0 && <List size="xs" mt={4}>{result.errors.slice(0, 5).map((e, i) => <List.Item key={i}>{e}</List.Item>)}</List>}
+          </Alert>
+        )}
+        <Group justify="flex-end">
+          <Button loading={busy} disabled={!systemId || !file} onClick={() => void submit()}>Importieren</Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -132,17 +220,54 @@ function SecuritySection({ twoFactorEnabled }: { twoFactorEnabled: boolean }) {
   const { refresh } = useAuth();
   const [pwOpen, setPwOpen] = useState(false);
   const [twoOpen, setTwoOpen] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
   return (
     <Card>
       <Text fw={600} mb="sm">Sicherheit</Text>
       <Group>
         <Button variant="light" onClick={() => setPwOpen(true)}>Passwort ändern</Button>
         {!twoFactorEnabled && <Button variant="light" onClick={() => setTwoOpen(true)}>Zwei-Faktor aktivieren</Button>}
-        {twoFactorEnabled && <Badge color="teal" variant="light">Zwei-Faktor aktiv</Badge>}
+        {twoFactorEnabled && (
+          <>
+            <Badge color="teal" variant="light">Zwei-Faktor aktiv</Badge>
+            <Button variant="subtle" color="red" onClick={() => setDisableOpen(true)}>Deaktivieren</Button>
+          </>
+        )}
       </Group>
       <ChangePasswordModal opened={pwOpen} onClose={() => setPwOpen(false)} />
       <TwoFactorModal opened={twoOpen} onClose={() => setTwoOpen(false)} onDone={() => { setTwoOpen(false); void refresh(); }} />
+      <TwoFactorDisableModal opened={disableOpen} onClose={() => setDisableOpen(false)} onDone={() => { setDisableOpen(false); void refresh(); }} />
     </Card>
+  );
+}
+
+function TwoFactorDisableModal({ opened, onClose, onDone }: { opened: boolean; onClose: () => void; onDone: () => void }) {
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true); setError(null);
+    try {
+      await apiPost('/api/auth/2fa/disable', { password, code });
+      notifications.show({ color: 'teal', message: 'Zwei-Faktor deaktiviert' });
+      setPassword(''); setCode(''); onDone();
+    } catch (e) { setError(e instanceof ApiError ? e.message : 'Fehler'); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="Zwei-Faktor deaktivieren" centered>
+      <Stack>
+        {error && <Alert color="red" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
+        <Text size="sm" c="dimmed">Zur Bestätigung Passwort und aktuellen Authenticator-Code eingeben.</Text>
+        <PasswordInput label="Passwort" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+        <TextInput label="6-stelliger Code" value={code} onChange={(e) => setCode(e.currentTarget.value)} inputMode="numeric" maxLength={6} />
+        <Group justify="flex-end">
+          <Button color="red" loading={busy} disabled={!password || code.length < 6} onClick={() => void submit()}>Deaktivieren</Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 

@@ -103,6 +103,7 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     # Benutzernamen und Sicherungspfade.
     ("/api/settings",     None,          "admin"),
     ("/api/system/info",  None,          "viewer"),
+    ("/api/changelog",    None,          "viewer"),
     ("/api/backup",       None,          "admin"),
     ("/api/mqtt",         None,          "admin"),
     # Selbst-Update (dezentral): Prüfen, Auslösen und Rollback nur für Admins.

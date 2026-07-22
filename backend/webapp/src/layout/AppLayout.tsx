@@ -7,6 +7,7 @@ import {
 } from '@tabler/icons-react';
 import { NavLink as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { ChangelogBadge } from './ChangelogBadge';
 
 interface NavItem {
   to: string;
@@ -63,6 +64,7 @@ export function AppLayout() {
           <Group gap="sm" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             <Title order={4}>Zählwerk</Title>
+            <ChangelogBadge />
           </Group>
           <Group gap="xs" wrap="nowrap">
             <ActionIcon variant="default" onClick={spotlight.open} aria-label="Suche (Strg+K)">

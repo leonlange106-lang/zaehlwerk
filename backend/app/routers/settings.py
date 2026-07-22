@@ -175,6 +175,13 @@ def update_settings(payload: AppSettingsUpdate, session: Session = Depends(get_s
     return AppSettingsRead(**_redacted(values))
 
 
+@router.get("/api/changelog")
+def changelog():
+    """Versionsverlauf für die Oberfläche (aktuelle Version + Einträge)."""
+    from ..changelog import CHANGELOG
+    return {"current": APP_VERSION, "entries": CHANGELOG}
+
+
 @router.get("/api/system/info", response_model=SystemInfo)
 def system_info(session: Session = Depends(get_session)):
     """Read-only Diagnose. Enthält bewusst keine Tokens oder URLs."""

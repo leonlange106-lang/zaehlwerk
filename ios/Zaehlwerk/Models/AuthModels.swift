@@ -94,6 +94,26 @@ struct TwoFactorVerifyRequest: Encodable {
     let code: String
 }
 
+struct TwoFactorDisableRequest: Encodable {
+    let password: String
+    let code: String
+}
+
+// MARK: - Versionsverlauf (Changelog)
+
+public struct ChangelogEntry: Decodable, Identifiable, Sendable {
+    public let version: String
+    public let date: String
+    public let title: String
+    public let changes: [String]
+    public var id: String { version }
+}
+
+public struct ChangelogResponse: Decodable, Sendable {
+    public let current: String
+    public let entries: [ChangelogEntry]
+}
+
 struct ChangePasswordRequest: Encodable {
     let current_password: String
     let new_password: String
