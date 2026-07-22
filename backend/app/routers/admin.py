@@ -419,7 +419,9 @@ def audit_facets(session: Session = Depends(get_session)):
     from sqlalchemy import distinct
 
     def values(column):
-        return sorted(v for (v,) in session.exec(select(distinct(column))).all() if v)
+        # session.exec(select(<eine Spalte>)) liefert Skalare (keine 1-Tupel) –
+        # daher direkt über die Werte iterieren, nicht entpacken.
+        return sorted(v for v in session.exec(select(distinct(column))).all() if v)
 
     users = session.exec(
         select(distinct(AuditLog.user_id), AuditLog.username)).all()

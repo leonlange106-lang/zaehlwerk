@@ -243,3 +243,42 @@ export interface BackupInfo {
   size_bytes: number;
   created_at?: string | null;
 }
+
+export interface TariffPlan {
+  id: string;
+  system_id: string;
+  name?: string | null;
+  anbieter?: string | null;
+  gueltig_ab: string;
+  gueltig_bis?: string | null;
+  arbeitspreis: number;
+  grundpreis: number;
+  notiz?: string | null;
+  aktiv: boolean;
+}
+
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  user_id?: string | null;
+  username?: string | null;
+  action: string;
+  target_table: string;
+  target_id?: string | null;
+  old_value?: unknown;
+  new_value?: unknown;
+}
+
+export interface AuditResponse {
+  entries: AuditEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface AuditFacets {
+  actions: string[];
+  tables: string[];
+  users: { id: string; username: string }[];
+}
