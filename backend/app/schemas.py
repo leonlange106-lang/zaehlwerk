@@ -391,6 +391,9 @@ class TariffPlanBase(BaseModel):
     arbeitspreis: float = Field(..., ge=0, le=100)
     grundpreis: float = Field(0.0, ge=0, le=5000)
     notiz: Optional[str] = Field(None, max_length=500)
+    # Verweis auf die hochgeladene Vertragsunterlage und die Kündigungsfrist.
+    contract_document_url: Optional[str] = Field(None, max_length=300)
+    notice_period_days: Optional[int] = Field(None, ge=0, le=3650)
 
     @field_validator("name", "anbieter", "notiz", mode="before")
     @classmethod
@@ -419,6 +422,8 @@ class TariffPlanUpdate(BaseModel):
     arbeitspreis: Optional[float] = Field(None, ge=0, le=100)
     grundpreis: Optional[float] = Field(None, ge=0, le=5000)   # €/Jahr seit v3.18.0
     notiz: Optional[str] = Field(None, max_length=500)
+    contract_document_url: Optional[str] = Field(None, max_length=300)
+    notice_period_days: Optional[int] = Field(None, ge=0, le=3650)
 
 
 class TariffPlanRead(TariffPlanBase):
@@ -426,6 +431,42 @@ class TariffPlanRead(TariffPlanBase):
     system_id: str
     erstellt_am: datetime
     aktiv: bool = False        # Periode umfasst das heutige Datum
+    # Abgeleitet: letzter Kündigungstermin (gueltig_bis - notice_period_days)
+    # und ob dieser innerhalb der nächsten 30 Tage liegt.
+    notice_deadline: Optional[date] = None
+    notice_due_soon: bool = False
+
+
+# ---------- Tarif-Dokument-Upload / OCR ----------
+class TariffOcrSuggestion(BaseModel):
+    """Aus einer Vertragsunterlage vorgeschlagene Felder (alle optional)."""
+    anbieter: Optional[str] = None
+    arbeitspreis: Optional[float] = None
+    grundpreis: Optional[float] = None
+    gueltig_ab: Optional[date] = None
+    gueltig_bis: Optional[date] = None
+    notice_period_days: Optional[int] = None
+
+
+class TariffUploadResult(BaseModel):
+    document_url: str
+    filename: str
+    text_excerpt: Optional[str] = None
+    ocr_available: bool = True
+    suggestion: TariffOcrSuggestion = Field(default_factory=TariffOcrSuggestion)
+
+
+class TariffExpiring(BaseModel):
+    """Vertrag, dessen Kündigungstermin naht."""
+    tariff_id: str
+    system_id: str
+    system_name: str
+    name: Optional[str] = None
+    anbieter: Optional[str] = None
+    gueltig_bis: date
+    notice_period_days: int
+    notice_deadline: date
+    days_until_deadline: int
 
 
 class MqttAssign(BaseModel):

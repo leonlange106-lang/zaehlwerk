@@ -268,6 +268,19 @@ def _m011_two_factor(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE users ADD COLUMN is_first_login BOOLEAN NOT NULL DEFAULT 0"))
 
 
+def _m012_tariff_contract(conn: Connection) -> None:
+    """Vertragsunterlage (Dokument-URL) und Kündigungsfrist je Tarif.
+
+    Grundlage für Dokument-Upload/OCR und die Vertragsende-Warnung: aus
+    `gueltig_bis` minus `notice_period_days` ergibt sich der letzte Kündigungs-
+    termin. Bestandsdaten bleiben unangetastet (Spalten starten auf NULL)."""
+    cols = _columns(conn, "tariffs")
+    if "contract_document_url" not in cols:
+        conn.execute(text("ALTER TABLE tariffs ADD COLUMN contract_document_url TEXT"))
+    if "notice_period_days" not in cols:
+        conn.execute(text("ALTER TABLE tariffs ADD COLUMN notice_period_days INTEGER"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -280,6 +293,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (9, "meter_start-Spalte an readings ergaenzen", _m009_meter_start),
     (10, "grundpreis von Monats- auf Jahresbetrag umstellen", _m010_grundpreis_yearly),
     (11, "Zwei-Faktor und Erstanmelde-Zwang an users", _m011_two_factor),
+    (12, "Vertragsunterlage und Kuendigungsfrist an tariffs", _m012_tariff_contract),
 ]
 
 

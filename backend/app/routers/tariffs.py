@@ -1,13 +1,23 @@
-"""Tarifperioden je System."""
+"""Tarifperioden je System, inkl. Vertragsunterlagen-Upload/OCR und der
+Vertragsende-Übersicht (Kündigungstermin naht)."""
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
+from .. import tariff_docs
 from ..database import get_session
 from ..models import System, Tariff
-from ..schemas import TariffPlanCreate, TariffPlanRead, TariffPlanUpdate
+from ..schemas import (
+    TariffExpiring,
+    TariffOcrSuggestion,
+    TariffPlanCreate,
+    TariffPlanRead,
+    TariffPlanUpdate,
+    TariffUploadResult,
+)
 
 router = APIRouter(tags=["tariffs"])
 
@@ -50,11 +60,16 @@ def _check_overlap(session: Session, system_id: str, ab: date, bis: Optional[dat
 
 def _to_read(t: Tariff) -> TariffPlanRead:
     today = date.today()
+    deadline = tariff_docs.notice_deadline(t.gueltig_bis, t.notice_period_days)
+    due_soon = bool(deadline and 0 <= (deadline - today).days <= 30)
     return TariffPlanRead(
         id=t.id, system_id=t.system_id, name=t.name, anbieter=t.anbieter,
         gueltig_ab=t.gueltig_ab, gueltig_bis=t.gueltig_bis,
         arbeitspreis=t.arbeitspreis, grundpreis=t.grundpreis,
         notiz=t.notiz, erstellt_am=t.erstellt_am,
+        contract_document_url=t.contract_document_url,
+        notice_period_days=t.notice_period_days,
+        notice_deadline=deadline, notice_due_soon=due_soon,
         aktiv=t.gueltig_ab <= today and (t.gueltig_bis is None or today <= t.gueltig_bis),
     )
 
@@ -107,3 +122,72 @@ def delete_tariff(tariff_id: str, session: Session = Depends(get_session)):
     if t:
         session.delete(t)
         session.commit()
+
+
+# --------------------------------------------------------------------------
+# Vertragsunterlage: Upload + OCR-Vorschläge, Abruf
+# --------------------------------------------------------------------------
+@router.post("/api/tariffs/upload", response_model=TariffUploadResult)
+async def upload_document(file: UploadFile = File(...)):
+    """Vertrag (PDF/Bild) hochladen: ablegen, Text gewinnen und Felder
+    vorschlagen. Der Tarif selbst wird danach über create/patch mit der
+    zurückgegebenen document_url und den (ggf. korrigierten) Feldern gespeichert.
+    """
+    ctype = (file.content_type or "").split(";")[0].strip()
+    if ctype not in tariff_docs.ALLOWED_TYPES:
+        raise HTTPException(415, "Nur PDF, JPEG, PNG, WEBP oder HEIC")
+    data = await file.read()
+    if not data:
+        raise HTTPException(422, "Leere Datei")
+    if len(data) > tariff_docs.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Datei zu groß (max. 20 MB)")
+
+    name, url = tariff_docs.save_document(data, ctype)
+    text, ocr_available = tariff_docs.extract_text(data, ctype)
+    fields = tariff_docs.extract_fields(text)
+    excerpt = (text[:600] + " …") if len(text) > 600 else (text or None)
+    return TariffUploadResult(
+        document_url=url, filename=name, text_excerpt=excerpt,
+        ocr_available=ocr_available, suggestion=TariffOcrSuggestion(**fields),
+    )
+
+
+@router.get("/api/tariffs/documents/{name}")
+def get_document(name: str):
+    path = tariff_docs.document_path(name)
+    if not path:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    return FileResponse(str(path))
+
+
+# --------------------------------------------------------------------------
+# Vertragsende-Übersicht (Kündigungstermin naht)
+# --------------------------------------------------------------------------
+@router.get("/api/tariffs/expiring", response_model=list[TariffExpiring])
+def expiring_tariffs(
+    within_days: int = Query(30, ge=0, le=3650, description="Vorlauf bis zum Kündigungstermin"),
+    session: Session = Depends(get_session),
+):
+    """Verträge, deren Kündigungstermin (gueltig_bis − Kündigungsfrist) heute
+    bis in `within_days` Tagen liegt. Basis für die In-App-Warnung."""
+    today = date.today()
+    rows = session.exec(
+        select(Tariff, System).join(System, System.id == Tariff.system_id)
+        .where(Tariff.gueltig_bis.is_not(None), Tariff.notice_period_days.is_not(None))
+    ).all()
+    out: list[TariffExpiring] = []
+    for t, s in rows:
+        deadline = tariff_docs.notice_deadline(t.gueltig_bis, t.notice_period_days)
+        if not deadline:
+            continue
+        days = (deadline - today).days
+        if days < 0 or days > within_days:
+            continue
+        out.append(TariffExpiring(
+            tariff_id=t.id, system_id=s.id, system_name=s.name,
+            name=t.name, anbieter=t.anbieter, gueltig_bis=t.gueltig_bis,
+            notice_period_days=t.notice_period_days, notice_deadline=deadline,
+            days_until_deadline=days,
+        ))
+    out.sort(key=lambda e: e.days_until_deadline)
+    return out

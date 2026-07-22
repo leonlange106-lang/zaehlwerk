@@ -12,6 +12,9 @@ pyotp==2.9.0
 qrcode==8.0
 cryptography==43.0.3
 pytesseract==0.3.13
+# PDF-Textebene für Tarif-Vertragsunterlagen: liest die Textebene direkt
+# (Autofüllung ohne OCR), sonst werden Seiten für die OCR-Pipeline gerendert.
+PyMuPDF==1.24.10
 # opencv-python-headless bewusst auf 4.x statt 5.x: ab opencv 5 wird ein
 # numpy>=2.3 gezogen, dessen offizielle Wheels mit der CPU-Baseline
 # x86-64-v2 (SSE4.2/POPCNT) gebaut sind. Auf älteren/stromsparenden x86-

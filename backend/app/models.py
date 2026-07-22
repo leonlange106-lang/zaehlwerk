@@ -164,6 +164,11 @@ class Tariff(SQLModel, table=True):
     # grundpreis / Tage-des-Jahres je Verbrauchstag (siehe logic.apply_tariffs).
     grundpreis: float = 0.0
     notiz: Optional[str] = None
+    # Vertragsunterlage (per Upload/OCR) und Kündigungsfrist in Tagen. Aus
+    # gueltig_bis minus notice_period_days ergibt sich der Kündigungstermin,
+    # der die Vertragsende-Warnung auslöst (seit Migration 12).
+    contract_document_url: Optional[str] = None
+    notice_period_days: Optional[int] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 

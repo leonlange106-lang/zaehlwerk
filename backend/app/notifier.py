@@ -112,6 +112,43 @@ def check_mqtt_watchdog(base_hours: int = 48) -> None:
                     pass
 
 
+def check_contract_endings(within_days: int = 30) -> None:
+    """Meldet Verträge, deren Kündigungstermin (gueltig_bis − Kündigungsfrist)
+    innerhalb des Vorlaufs liegt – rechtzeitig, um noch kündigen zu können.
+    Feste notification_id je Tarif ersetzt sich selbst statt zu spammen."""
+    from datetime import date, timedelta
+
+    from .models import System, Tariff
+
+    today = date.today()
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Tariff, System).join(System, System.id == Tariff.system_id)
+            .where(Tariff.gueltig_bis.is_not(None), Tariff.notice_period_days.is_not(None))
+        ).all()
+        for t, s in rows:
+            deadline = t.gueltig_bis - timedelta(days=t.notice_period_days or 0)
+            days = (deadline - today).days
+            nid = f"zaehlwerk_contract_{t.id}"
+            if 0 <= days <= within_days:
+                label = t.name or s.name
+                if t.anbieter:
+                    label = f"{label} ({t.anbieter})"
+                _ha_service("persistent_notification/create", {
+                    "notification_id": nid,
+                    "title": f"Zählwerk: Vertrag {s.name} kündbar",
+                    "message": (
+                        f"Der Tarif {label} läuft am {t.gueltig_bis:%d.%m.%Y} aus. "
+                        f"Letzter Kündigungstermin: {deadline:%d.%m.%Y} (in {days} Tagen)."
+                    ),
+                })
+            else:
+                try:
+                    _ha_service("persistent_notification/dismiss", {"notification_id": nid})
+                except Exception:  # noqa: BLE001
+                    pass
+
+
 async def watcher() -> None:
     """Intervall und Ein/Aus kommen aus den Anwendungseinstellungen und werden
     in JEDEM Zyklus neu gelesen -> Änderungen greifen ohne Add-on-Neustart."""
@@ -124,6 +161,7 @@ async def watcher() -> None:
             from .routers.settings import get_setting
             if await asyncio.to_thread(get_setting, "notify_enabled", True):
                 await asyncio.to_thread(check_and_notify)
+                await asyncio.to_thread(check_contract_endings)
             if await asyncio.to_thread(get_setting, "mqtt_watchdog_enabled", True):
                 watchdog_hours = int(await asyncio.to_thread(get_setting, "mqtt_watchdog_hours", 48))
                 await asyncio.to_thread(check_mqtt_watchdog, watchdog_hours)
