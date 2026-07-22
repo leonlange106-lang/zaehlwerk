@@ -199,3 +199,51 @@ class AppSetting(SQLModel, table=True):
 
     key: str = Field(primary_key=True)
     value: str
+
+
+# --------------------------------------------------------------------------
+# Multi-Tenant: Routing & Rechte (leben ausschließlich in der zentralen
+# System-DB, nicht in den Mandanten-Datenbanken)
+# --------------------------------------------------------------------------
+class DatabaseRole(str, Enum):
+    """Rolle eines Nutzers auf einer konkreten Datenbank."""
+    owner = "owner"            # Eigentümer: volle Kontrolle inkl. Freigaben
+    read_write = "read_write"  # darf lesen und schreiben
+    read_only = "read_only"    # darf nur lesen
+
+
+class UserDatabase(SQLModel, table=True):
+    """Registrierung einer Mandanten-Datenbank (zentrale System-DB).
+
+    Jeder Nutzer erhält standardmäßig genau eine eigene, isolierte SQLite-Datei.
+    Diese Tabelle bildet das Routing ab: welche Datei zu welchem Eigentümer
+    gehört. `filename` ist relativ zum Tenants-Verzeichnis; die beim Umzug
+    übernommene Bestands-Datenbank trägt `is_default=True` und einen absoluten
+    Pfad.
+    """
+    __tablename__ = "user_databases"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    owner_user_id: str = Field(index=True)          # verweist auf users.id (System-DB)
+    filename: str                                   # relativ zu TENANTS_DIR (oder absolut = Bestand)
+    db_kind: str = "sqlite"
+    is_default: bool = False                        # die übernommene Bestands-DB
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DatabaseAccess(SQLModel, table=True):
+    """Zugriffs-/Rollen-Matrix: welcher Nutzer darf mit welcher DB was.
+
+    Freigaben an andere Nutzer laufen über diese Tabelle (Multi-User-Access auf
+    eine DB). Die Eigentümerschaft ergibt sich zusätzlich aus
+    `UserDatabase.owner_user_id`; für den Eigentümer wird beim Anlegen zudem ein
+    expliziter `owner`-Eintrag geschrieben. Liegt in der zentralen System-DB.
+    """
+    __tablename__ = "database_access"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    database_id: str = Field(index=True)
+    role: str = Field(default=DatabaseRole.read_only.value)
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)

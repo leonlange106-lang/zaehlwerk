@@ -84,7 +84,8 @@ def test_full_user_lifecycle(client):
 def test_secret_is_encrypted_at_rest(client):
     """Das gespeicherte TOTP-Secret darf nicht im Klartext in der DB liegen."""
     from sqlmodel import Session, select
-    from app.database import engine
+    # Konten liegen seit der Multi-DB-Umstellung in der zentralen System-DB.
+    from app.database import system_engine as engine
     from app.models import User
 
     r = client.post("/api/admin/users/create", json={"username": "krypto.user", "role": "viewer"})

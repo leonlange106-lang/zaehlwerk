@@ -12,7 +12,8 @@ from conftest import ADMIN
 from sqlmodel import Session, select
 
 from app import auth
-from app.database import engine
+# Konten liegen seit der Multi-DB-Umstellung in der zentralen System-DB.
+from app.database import system_engine as engine
 from app.models import User
 
 

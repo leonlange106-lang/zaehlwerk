@@ -4,8 +4,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlmodel import Session, select
 
-from .. import auth, twofactor
-from ..database import get_session
+from .. import auth, tenancy, twofactor
+# Alle Endpunkte dieses Routers arbeiten mit Konten/Anmeldung – diese liegen in
+# der zentralen System-DB. get_session wird daher an die System-Session gebunden.
+from ..database import get_system_session as get_session
 from ..models import User
 from ..schemas import (AuthStatus, ChangePasswordRequest, LoginRequest,
                        LoginResponse, SetupRequest, TwoFactorDisableRequest,
@@ -90,6 +92,8 @@ def setup(payload: SetupRequest, response: Response, request: Request,
     session.add(user)
     session.commit()
     session.refresh(user)
+    # Der erste Admin wird Eigentümer des Standard-Mandanten (Bestands-DB).
+    tenancy.claim_default_database(session, user)
     auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
     return _to_read(user)
 

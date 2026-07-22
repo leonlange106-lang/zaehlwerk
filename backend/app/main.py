@@ -9,11 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from sqlmodel import Session
 
-from .database import engine, init_db
+from .database import engine, system_engine, tenant_engine, init_db
 from .version import APP_VERSION
 from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
-               notifier, outbound, updater as updater_mod)
-from .routers import (admin, auth as auth_router, backups, dashboard, external,
+               notifier, outbound, tenancy, updater as updater_mod)
+from .routers import (admin, auth as auth_router, backups, dashboard,
+                      databases as databases_router, external,
                       ha, imports, meters, mqtt, ocr as ocr_router, readings,
                       settings as settings_router, systems, tariffs,
                       update as update_router)
@@ -38,6 +39,7 @@ app.add_middleware(
 )
 
 app.include_router(admin.router)
+app.include_router(databases_router.router)
 app.include_router(dashboard.router)
 app.include_router(ocr_router.router)
 app.include_router(auth_router.router)
@@ -74,12 +76,18 @@ async def auth_middleware(request: Request, call_next):
     if not path.startswith("/api") or path in auth_mod.PUBLIC_PATHS:
         return await call_next(request)
 
-    with Session(engine) as session:
+    # Identität & aktive Mandanten-DB werden gegen die zentrale System-DB
+    # aufgelöst (Konten und Routing liegen dort, nicht in den Fachdaten).
+    active = None
+    with Session(system_engine) as session:
         # Solange kein Konto existiert, ist die Ersteinrichtung offen. Die App
         # sperrt sich sonst selbst aus, bevor ein Konto angelegt werden kann.
         if auth_mod.setup_required(session):
             return await call_next(request)
         user = auth_mod.resolve_user(request, session)
+        if user is not None:
+            requested_db = request.headers.get("x-zaehlwerk-database")
+            active = tenancy.resolve_active(session, user, requested_db)
 
     if user is None:
         return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
@@ -104,6 +112,26 @@ async def auth_middleware(request: Request, call_next):
                       f"{auth_mod.ROLES.get(needed, {}).get('label', needed)}, "
                       f"vorhanden: {auth_mod.ROLES.get(user.role, {}).get('label', user.role)}."
         }, status_code=403)
+
+    # ---------- Aktive Mandanten-DB festlegen ----------
+    # get_session() liest diese Engine; ohne sie fiele der Request auf den
+    # Standard-Mandanten zurück (rückwärtskompatibel).
+    if active is not None:
+        request.state.tenant_engine = tenant_engine(active["path"])
+        request.state.db_role = active["role"]
+        request.state.active_db_id = active["id"]
+        request.state.active_db_name = active["name"]
+
+        # ---------- Nur-Lese-Freigaben durchsetzen ----------
+        # Schreibende Fachzugriffe auf eine read_only freigegebene DB werden
+        # zentral abgewiesen. Konto-/Freigabe-Routen (System-DB) bleiben frei.
+        if (request.method in auth_mod.WRITE_METHODS
+                and active["role"] == "read_only"
+                and not path.startswith(("/api/auth", "/api/databases", "/api/admin"))):
+            return JSONResponse(
+                {"detail": "Nur-Lese-Zugriff auf diese Datenbank."},
+                status_code=403,
+            )
 
     request.state.user = user
     # Konto für das Änderungsprotokoll hinterlegen. Muss nach der Anfrage

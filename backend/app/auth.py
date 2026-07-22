@@ -34,7 +34,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, Response
 from sqlmodel import Session, func, select
 
-from .database import get_session
+# current_user liest den bereits in der Middleware aufgelösten Nutzer aus
+# request.state – es braucht daher keine DB-Session mehr.
 from .models import User
 
 log = logging.getLogger("zaehlwerk.auth")
@@ -78,6 +79,9 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     # Admin-Werkzeuge: Einblick in sämtliche Daten und den Systemzustand.
     # Steht bewusst an erster Stelle, damit keine spätere Regel sie aufweicht.
     ("/api/admin",        None,          "admin"),
+    # Eigene Datenbank-Auskunft (welche DBs darf ich, welche ist aktiv): jedes
+    # angemeldete Konto (nur lesend). Die Verwaltung läuft unter /api/admin.
+    ("/api/databases",    None,          "guest"),
     # Erkennung schreibt nichts, gehört aber zur Erfassung: Rolle Schreiber.
     ("/api/ocr",          None,          "writer"),
     # Eigenes Dashboard: jedes angemeldete Konto darf sein Layout lesen UND
@@ -421,7 +425,7 @@ def ensure_ha_user(session: Session, info: dict) -> User:
 # --------------------------------------------------------------------------
 # Abhängigkeit für geschützte Routen
 # --------------------------------------------------------------------------
-def current_user(request: Request, session: Session = Depends(get_session)) -> User:
+def current_user(request: Request) -> User:
     user = getattr(request.state, "user", None)
     if user is None:
         raise HTTPException(401, "Nicht angemeldet")

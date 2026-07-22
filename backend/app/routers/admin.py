@@ -36,10 +36,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
-from .. import audit, auth
+from .. import audit, auth, tenancy
 from .. import backup as backup_mod, mqtt_client, ocr as ocr_mod, outbound
 from ..config import settings as runtime_settings
-from ..database import engine, get_session
+from ..database import engine, get_session, get_system_session
 from ..migrations import schema_version
 from ..models import AuditLog, User
 from ..auth import current_user
@@ -53,11 +53,14 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 @router.post("/users/create", response_model=UserCreateResponse, status_code=201)
 def create_user(payload: UserCreateRequest,
                 actor: User = Depends(current_user),
-                session: Session = Depends(get_session)):
+                session: Session = Depends(get_system_session)):
     """Neues Konto anlegen. Das System vergibt ein sicheres temporäres Passwort
     und gibt es dem Administrator EINMALIG im Klartext zurück (nie erneut
     abrufbar). Der neue Nutzer wird beim ersten Login zu Passwortwechsel und
-    2FA-Einrichtung gezwungen (`temp_password_active` + `is_first_login`)."""
+    2FA-Einrichtung gezwungen (`temp_password_active` + `is_first_login`).
+
+    Konten leben in der System-DB; jeder neue Nutzer erhält zugleich eine
+    eigene, isolierte Mandanten-Datenbank (TICKET-1.1)."""
     if not auth.crypto_available():
         raise HTTPException(503, "bcrypt oder PyJWT fehlen im Image")
     username = payload.username.strip().lower()
@@ -81,6 +84,8 @@ def create_user(payload: UserCreateRequest,
     session.add(user)
     session.commit()
     session.refresh(user)
+    # Eigene isolierte Datenbank für das neue Konto bereitstellen.
+    tenancy.provision_for_user(session, user)
     log.info("Konto angelegt: %s (Rolle %s) durch %s", username, payload.role, actor.username)
     read = UserRead(id=user.id, username=user.username,
                     display_name=user.display_name or user.username,
