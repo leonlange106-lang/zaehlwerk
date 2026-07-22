@@ -7,9 +7,10 @@ import { OnboardingView } from './features/auth/OnboardingView';
 import { DashboardView } from './features/dashboard/DashboardView';
 import { ReadingsView } from './features/systems/ReadingsView';
 import { SystemDetailView } from './features/systems/SystemDetailView';
-import { TariffsView, ReportsView, AuditView } from './features/stubs';
+import { TariffsView, AuditView } from './features/stubs';
 import { AdminView } from './features/admin/AdminView';
 import { SettingsView } from './features/settings/SettingsView';
+import { ReportsView } from './features/reports/ReportsView';
 
 export default function App() {
   const { checked, status, onboardingNeeded } = useAuth();
