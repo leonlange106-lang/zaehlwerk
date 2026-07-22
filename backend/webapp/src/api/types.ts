@@ -102,6 +102,9 @@ export interface Reading {
   is_outlier: boolean;
   cost_effective?: number | null;
   cost_estimated: boolean;
+  value_kwh?: number | null;
+  consumption_kwh?: number | null;
+  consumption_per_day_kwh?: number | null;
 }
 
 export interface SystemStats {
@@ -116,6 +119,9 @@ export interface SystemStats {
   total_cost_tariff?: number | null;
   avg_price_effective?: number | null;
   coverage_ratio: number;
+  kwh_factor?: number | null;
+  total_consumption_kwh?: number | null;
+  avg_per_day_kwh?: number | null;
 }
 
 export interface ChartData {
@@ -129,6 +135,8 @@ export interface ChartData {
   consumption_per_day: (number | null)[];
   outliers: boolean[];
   meter_replaced: boolean[];
+  consumption_per_day_kwh?: (number | null)[];
+  kwh_factor?: number | null;
 }
 
 // Antwort von POST /api/ocr/scan

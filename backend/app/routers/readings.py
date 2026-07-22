@@ -104,7 +104,9 @@ def _enriched(session: Session, system: System,
         logic.compute_intervals(raw, price=_price(system)), _sigma(session)
     )
     # Tarifkosten treten NEBEN die erfassten Kosten, nicht an deren Stelle.
-    return logic.apply_tariffs(enriched, _tariffs(session, system.id))
+    enriched = logic.apply_tariffs(enriched, _tariffs(session, system.id))
+    # Gas: m³-Werte zusätzlich in kWh ausweisen (TICKET-2.2).
+    return logic.annotate_kwh(enriched, logic.gas_factor(system.typ, system.zusatzfelder))
 
 
 def _latest(session: Session, system_id: str) -> Optional[Reading]:
@@ -229,6 +231,13 @@ def get_stats(
     enriched = _enriched(session, system, from_, to)
     stats = logic.compute_stats(enriched, _sigma(session))
     stats.update(logic.tariff_summary(enriched))
+    # Gas: Gesamt-/Tagesverbrauch zusätzlich in kWh (TICKET-2.2).
+    factor = logic.gas_factor(system.typ, system.zusatzfelder)
+    if factor:
+        stats["kwh_factor"] = round(factor, 4)
+        stats["total_consumption_kwh"] = round(stats["total_consumption"] * factor, 2)
+        if stats.get("avg_per_day") is not None:
+            stats["avg_per_day_kwh"] = round(stats["avg_per_day"] * factor, 3)
     return stats
 
 
@@ -258,9 +267,14 @@ def get_chart_data(
     # Lange Historien werden fürs Diagramm verdichtet – sonst überträgt und
     # zeichnet die Oberfläche tausende Punkte, die kein Bildschirm auflöst.
     points = logic.downsample_enriched(enriched)
+    arrays = _chart_arrays(points)
+    factor = logic.gas_factor(system.typ, system.zusatzfelder)
+    cpd_kwh = ([round(v * factor, 3) if v is not None else None
+                for v in arrays["consumption_per_day"]] if factor else [])
     return ChartData(
         system_id=system_id, name=system.name, unit=system.einheit,
-        color=system.farbe, **_chart_arrays(points),
+        color=system.farbe, **arrays,
+        consumption_per_day_kwh=cpd_kwh, kwh_factor=round(factor, 4) if factor else None,
     )
 
 

@@ -72,14 +72,16 @@ export function SystemDetailView() {
           <Stat label="Gesamtverbrauch" value={fmtValue(stats.data.total_consumption, unit)} />
           <Stat label="Ø pro Tag" value={fmtValue(stats.data.avg_per_day, unit)} />
           <Stat label="Kosten gesamt" value={fmtCost(stats.data.total_cost_tariff ?? stats.data.total_cost)} />
-          <Stat label={`Preis/${unit || 'Einheit'}`} value={fmtCost(stats.data.cost_per_unit)} />
+          {stats.data.kwh_factor
+            ? <Stat label="Gesamt (kWh)" value={fmtValue(stats.data.total_consumption_kwh, 'kWh')} />
+            : <Stat label={`Preis/${unit || 'Einheit'}`} value={fmtCost(stats.data.cost_per_unit)} />}
         </SimpleGrid>
       )}
 
       {chart.data && <ConsumptionChart chart={chart.data} />}
 
       {canWrite && (
-        <AddReadingForm systemId={id} unit={unit} onSaved={reloadAll} />
+        <AddReadingForm systemId={id} unit={unit} kwhFactor={stats.data?.kwh_factor ?? null} onSaved={reloadAll} />
       )}
 
       <Card>
@@ -113,7 +115,12 @@ export function SystemDetailView() {
                       </Group>
                     </Table.Td>
                     <Table.Td ta="right">{fmtValue(r.value, unit)}</Table.Td>
-                    <Table.Td ta="right">{r.consumption_per_day != null ? `${fmtNumber(r.consumption_per_day)} ${unit}` : '–'}</Table.Td>
+                    <Table.Td ta="right">
+                      {r.consumption_per_day != null ? `${fmtNumber(r.consumption_per_day)} ${unit}` : '–'}
+                      {r.consumption_per_day_kwh != null && (
+                        <Text span size="xs" c="dimmed"> ({fmtNumber(r.consumption_per_day_kwh)} kWh)</Text>
+                      )}
+                    </Table.Td>
                     <Table.Td><Badge size="xs" variant="light" color="gray">{sourceLabel(r.source)}</Badge></Table.Td>
                     {canWrite && (
                       <Table.Td ta="right">
@@ -169,7 +176,7 @@ function ConsumptionChart({ chart }: { chart: ChartData }) {
   );
 }
 
-function AddReadingForm({ systemId, unit, onSaved }: { systemId: string; unit: string; onSaved: () => void }) {
+function AddReadingForm({ systemId, unit, kwhFactor, onSaved }: { systemId: string; unit: string; kwhFactor: number | null; onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const resetRef = useRef<() => void>(null);
@@ -248,7 +255,12 @@ function AddReadingForm({ systemId, unit, onSaved }: { systemId: string; unit: s
       <form onSubmit={form.onSubmit(submit)}>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
           <DatePickerInput label="Datum" valueFormat="DD.MM.YYYY" {...form.getInputProps('datum')} />
-          <NumberInput label={`Zählerstand (${unit})`} decimalScale={3} {...form.getInputProps('value')} />
+          <NumberInput
+            label={`Zählerstand (${unit})`} decimalScale={3} {...form.getInputProps('value')}
+            description={kwhFactor && form.values.value !== ''
+              ? `≈ ${fmtNumber(Number(form.values.value) * kwhFactor)} kWh`
+              : undefined}
+          />
           <NumberInput label="Kosten (€)" decimalScale={2} {...form.getInputProps('cost')} />
           <Textarea label="Notiz" autosize minRows={1} {...form.getInputProps('note')} />
         </SimpleGrid>

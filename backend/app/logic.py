@@ -407,3 +407,49 @@ def rolling_prognosis(enriched: list[dict], tariffs: list[dict], *,
         "exceeds_abschlag": exceeds,
         "shortfall": round(shortfall, 2) if shortfall is not None else None,
     }
+
+
+# --------------------------------------------------------------------------
+# Gas-Umrechnung m³ -> kWh (TICKET-2.2)
+# --------------------------------------------------------------------------
+# kWh = m³ × Brennwert × Zustandszahl. Brennwert (~8–12 kWh/m³) und Zustandszahl
+# (~0,9–1,0) stehen auf der Gasrechnung und sind je Zähler in den Zusatzfeldern
+# konfigurierbar. Vorgabewerte als grobe Näherung, wenn nichts hinterlegt ist.
+DEFAULT_BRENNWERT = 11.0
+DEFAULT_ZUSTANDSZAHL = 0.95
+
+
+def gas_factor(typ: Optional[str], zusatzfelder: Optional[dict]) -> Optional[float]:
+    """kWh-Umrechnungsfaktor je m³ oder None, wenn keine Umrechnung gilt.
+
+    Aktiv, sobald der Zähler als Gas gilt ODER Brennwert/Zustandszahl gesetzt
+    sind – damit Wasser (ebenfalls m³) nicht fälschlich umgerechnet wird.
+    """
+    zf = zusatzfelder or {}
+    is_gas = "gas" in (typ or "").lower()
+    has_cfg = ("brennwert" in zf) or ("zustandszahl" in zf)
+    if not (is_gas or has_cfg):
+        return None
+
+    def _num(key, default):
+        try:
+            return float(zf.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    return _num("brennwert", DEFAULT_BRENNWERT) * _num("zustandszahl", DEFAULT_ZUSTANDSZAHL)
+
+
+def annotate_kwh(enriched: list[dict], factor: Optional[float]) -> list[dict]:
+    """Ergänzt jede Ablesung um kWh-Felder (value/consumption/pro Tag). No-op
+    ohne Faktor, damit Nicht-Gas-Systeme unverändert bleiben."""
+    if not factor:
+        return enriched
+    for e in enriched:
+        if e.get("value") is not None:
+            e["value_kwh"] = round(e["value"] * factor, 2)
+        if e.get("consumption") is not None:
+            e["consumption_kwh"] = round(e["consumption"] * factor, 2)
+        if e.get("consumption_per_day") is not None:
+            e["consumption_per_day_kwh"] = round(e["consumption_per_day"] * factor, 3)
+    return enriched

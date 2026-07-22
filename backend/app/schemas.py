@@ -83,6 +83,10 @@ class ReadingRead(BaseModel):
     is_outlier: bool = False
     cost_effective: Optional[float] = None
     cost_estimated: bool = False
+    # Gas: kWh-Umrechnung (m³ × Brennwert × Zustandszahl); None bei Nicht-Gas.
+    value_kwh: Optional[float] = None
+    consumption_kwh: Optional[float] = None
+    consumption_per_day_kwh: Optional[float] = None
 
 
 # ---------- Statistik / Chart ----------
@@ -107,6 +111,10 @@ class StatsRead(BaseModel):
     avg_price_effective: Optional[float] = None
     covered_intervals: int = 0
     coverage_ratio: float = 0.0
+    # Gas: kWh-Umrechnung (TICKET-2.2). None bei Nicht-Gas.
+    kwh_factor: Optional[float] = None
+    total_consumption_kwh: Optional[float] = None
+    avg_per_day_kwh: Optional[float] = None
 
 
 class ChartData(BaseModel):
@@ -120,6 +128,9 @@ class ChartData(BaseModel):
     consumption_per_day: list[Optional[float]]
     outliers: list[bool]
     meter_replaced: list[bool]
+    # Gas: kWh-Reihe + Faktor (TICKET-2.2). Leer/None bei Nicht-Gas.
+    consumption_per_day_kwh: list[Optional[float]] = []
+    kwh_factor: Optional[float] = None
 
 
 class ImportResult(BaseModel):
