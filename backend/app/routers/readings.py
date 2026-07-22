@@ -622,3 +622,63 @@ def get_combined_report(
     )
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="zaehlwerk-gesamtbericht.pdf"'})
+
+
+# --------------------------------------------------------------------------
+# Strom/Gas/Wasser-Übersichtsbericht im VBA-Excel-Standard (TICKET-3.2)
+# --------------------------------------------------------------------------
+_MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+              "August", "September", "Oktober", "November", "Dezember"]
+
+
+def _gas_factor(system: Optional[System]) -> float:
+    """kWh-Umrechnungsfaktor je m³ = Brennwert × Zustandszahl (konfigurierbar in
+    den Zusatzfeldern des Gas-Systems; Standard 11,0 × 0,95). Vgl. TICKET-2.2."""
+    zf = (system.zusatzfelder or {}) if system else {}
+    def _num(key, default):
+        try:
+            return float(zf.get(key, default))
+        except (TypeError, ValueError):
+            return default
+    return _num("brennwert", 11.0) * _num("zustandszahl", 0.95)
+
+
+@router.get("/api/report/overview.pdf")
+def overview_report(session: Session = Depends(get_session)):
+    """Medienübergreifende Übersicht (Strom/Gas/Wasser) über die gesamte
+    Historie – fünf Sichten + Grafiken, Layout nach VBA-Excel-Standard."""
+    from .. import report_overview
+
+    systems = session.exec(select(System).where(System.aktiv == True)).all()  # noqa: E712
+
+    def pick(keyword: str) -> Optional[System]:
+        return next((s for s in systems if keyword in s.typ.lower()), None)
+
+    picked = {"strom": pick("strom"), "gas": pick("gas"), "wasser": pick("wasser")}
+
+    # Angereicherte Ablesungen je Medium, indiziert nach Tagesdatum.
+    per_medium: dict[str, dict] = {}
+    units: dict[str, str] = {}
+    for key, sysobj in picked.items():
+        units[key] = sysobj.einheit if sysobj else {"strom": "kWh", "gas": "m³", "wasser": "m³"}[key]
+        if sysobj is None:
+            per_medium[key] = {}
+            continue
+        enriched = _enriched(session, sysobj, None, None, None)
+        per_medium[key] = {e["datum"].date(): e for e in enriched}
+
+    # Zeilen = Vereinigung aller Ablesedaten, chronologisch.
+    all_dates = sorted({d for m in per_medium.values() for d in m.keys()})
+    rows = [{
+        "datum": d,
+        "strom": per_medium["strom"].get(d),
+        "gas": per_medium["gas"].get(d),
+        "wasser": per_medium["wasser"].get(d),
+    } for d in all_dates]
+
+    now = datetime.now()
+    stand = f"{now.day}.{_MONTHS_DE[now.month - 1]} {now.year} {now:%H:%M}"
+    pdf = report_overview.build_overview_pdf(
+        rows, units=units, gas_factor=_gas_factor(picked["gas"]), stand_label=stand)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="zaehlwerk-uebersicht.pdf"'})

@@ -112,7 +112,7 @@ ROUTE_RULES: list[tuple[str, Optional[set], str]] = [
     ("/api/external",     None,          "viewer"),
     # Datenausleitung: für Gäste gesperrt, sonst lesend erlaubt
     ("/api/export",       None,          "viewer"),
-    ("/api/report.pdf",   None,          "viewer"),
+    ("/api/report",       None,          "viewer"),   # report.pdf + report/overview.pdf
 ]
 
 
