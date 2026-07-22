@@ -208,3 +208,38 @@ export interface UpdateStatus {
   update_available?: boolean;
   pending?: unknown;
 }
+
+export interface AppSettings {
+  offline_mode: boolean;
+  notify_enabled: boolean;
+  notify_interval_hours: number;
+  outlier_sigma: number;
+  backup_enabled: boolean;
+  backup_time: string;
+  backup_keep_days: number;
+  audit_keep_days: number;
+  telemetry_keep_days: number;
+  default_role: string;
+  [key: string]: unknown;
+}
+
+export interface TenantDatabase {
+  id: string;
+  name: string;
+  role: string;
+  is_default: boolean;
+  owner_user_id: string;
+  db_kind: string;
+  size_bytes: number;
+}
+
+export interface DatabaseListResponse {
+  active_id: string | null;
+  databases: TenantDatabase[];
+}
+
+export interface BackupInfo {
+  filename: string;
+  size_bytes: number;
+  created_at?: string | null;
+}
