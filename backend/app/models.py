@@ -232,6 +232,27 @@ class UserDatabase(SQLModel, table=True):
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
+class UserSession(SQLModel, table=True):
+    """Server-seitige Sitzungs-Registrierung (zentrale System-DB).
+
+    JWTs sind für sich zustandslos – für die Session-Kontrolle im Admin-
+    Dashboard (aktive Sitzungen anzeigen, per Admin-Override zwangsweise beenden)
+    braucht es eine überprüfbare Liste. Jedes vollwertige Token (`jti`) erhält
+    hier einen Eintrag; `resolve_user` prüft ihn und aktualisiert `last_seen`,
+    ein Widerruf (`revoked=True`) macht das Token sofort ungültig.
+    """
+    __tablename__ = "user_sessions"
+
+    jti: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(default_factory=datetime.utcnow, index=True)
+    expires_at: datetime = Field(index=True)
+    user_agent: Optional[str] = None
+    ip: Optional[str] = None
+    revoked: bool = Field(default=False, index=True)
+
+
 class DatabaseAccess(SQLModel, table=True):
     """Zugriffs-/Rollen-Matrix: welcher Nutzer darf mit welcher DB was.
 

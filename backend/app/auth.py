@@ -305,7 +305,8 @@ STAGE_2FA = "2fa"
 PENDING_2FA_TTL_MINUTES = 5
 
 
-def create_token(user: User, session: Session, *, stage: str = STAGE_FULL) -> str:
+def create_token(user: User, session: Session, *, stage: str = STAGE_FULL,
+                 user_agent: Optional[str] = None, ip: Optional[str] = None) -> str:
     jwt = _jwt()
     if jwt is None:
         raise RuntimeError("PyJWT ist nicht installiert")
@@ -314,15 +315,72 @@ def create_token(user: User, session: Session, *, stage: str = STAGE_FULL) -> st
         exp = now + timedelta(hours=TOKEN_TTL_HOURS)
     else:
         exp = now + timedelta(minutes=PENDING_2FA_TTL_MINUTES)
+    jti = secrets.token_hex(8)
     payload = {
         "sub": user.id,
         "name": user.username,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
-        "jti": secrets.token_hex(8),
+        "jti": jti,
         "stg": stage,
     }
+    # Nur vollwertige Sitzungen registrieren – 2fa-Zwischentoken sind kurzlebig
+    # und sollen nicht in der Sitzungsliste auftauchen.
+    if stage == STAGE_FULL:
+        from .models import UserSession
+        session.add(UserSession(
+            jti=jti, user_id=user.id,
+            expires_at=exp.replace(tzinfo=None),
+            user_agent=(user_agent or "")[:400] or None,
+            ip=ip,
+        ))
+        session.commit()
     return jwt.encode(payload, _secret(session), algorithm=ALGORITHM)
+
+
+def _session_valid_and_touch(session: Session, jti: str) -> bool:
+    """Prüft die server-seitige Sitzung (Widerruf/Ablauf) und aktualisiert
+    `last_seen`. Fehlt der Eintrag, gilt das Token als ungültig – so greift der
+    Admin-Override (Zwangs-Abmeldung) sofort."""
+    from .models import UserSession
+    row = session.get(UserSession, jti)
+    if row is None or row.revoked:
+        return False
+    now = datetime.utcnow()
+    if row.expires_at and row.expires_at < now:
+        return False
+    row.last_seen = now
+    session.add(row)
+    session.commit()
+    return True
+
+
+def revoke_session(session: Session, jti: str) -> bool:
+    """Eine Sitzung widerrufen (Admin-Override / Abmelden)."""
+    from .models import UserSession
+    row = session.get(UserSession, jti)
+    if row is None or row.revoked:
+        return False
+    row.revoked = True
+    session.add(row)
+    session.commit()
+    return True
+
+
+def revoke_user_sessions(session: Session, user_id: str) -> int:
+    """Alle Sitzungen eines Nutzers widerrufen. Gibt die Anzahl zurück."""
+    from .models import UserSession
+    rows = session.exec(
+        select(UserSession)
+        .where(UserSession.user_id == user_id)
+        .where(UserSession.revoked == False)  # noqa: E712
+    ).all()
+    for row in rows:
+        row.revoked = True
+        session.add(row)
+    if rows:
+        session.commit()
+    return len(rows)
 
 
 def decode_token(token: str, session: Session) -> Optional[dict]:
@@ -455,6 +513,10 @@ def resolve_user(request: Request, session: Session) -> Optional[User]:
     # (zweite Stufe noch offen) darf keine regulären Routen freischalten – es
     # wird ausschliesslich von /api/auth/2fa/verify ausgewertet.
     if payload.get("stg", STAGE_FULL) != STAGE_FULL:
+        return None
+    # Server-seitige Sitzung prüfen (Widerruf/Ablauf) und last_seen fortschreiben.
+    jti = payload.get("jti")
+    if not jti or not _session_valid_and_touch(session, jti):
         return None
     user = session.get(User, payload.get("sub"))
     if not user or not user.aktiv:

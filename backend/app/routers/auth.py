@@ -24,6 +24,14 @@ def _is_secure(request: Request) -> bool:
     return request.headers.get("x-forwarded-proto", "").lower() == "https"
 
 
+def _session_meta(request: Request) -> tuple[str | None, str | None]:
+    """User-Agent und (Proxy-bewusste) Client-IP für die Sitzungsliste."""
+    ua = request.headers.get("user-agent")
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else None)
+    return ua, ip
+
+
 def _to_read(user: User) -> UserRead:
     return UserRead(id=user.id, username=user.username,
                     display_name=user.display_name or user.username,
@@ -94,7 +102,9 @@ def setup(payload: SetupRequest, response: Response, request: Request,
     session.refresh(user)
     # Der erste Admin wird Eigentümer des Standard-Mandanten (Bestands-DB).
     tenancy.claim_default_database(session, user)
-    auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
+    ua, ip = _session_meta(request)
+    auth.set_cookie(response, auth.create_token(user, session, user_agent=ua, ip=ip),
+                    _is_secure(request))
     return _to_read(user)
 
 
@@ -117,11 +127,13 @@ def login(payload: LoginRequest, response: Response, request: Request,
     user.letzter_login = datetime.utcnow()
     session.add(user)
     session.commit()
+    ua, ip = _session_meta(request)
 
     # Erstanmeldung: volles Cookie, aber die Middleware sperrt bis zum Abschluss
     # des Onboardings (Passwortwechsel + 2FA) alle regulären Routen.
     if user.is_first_login:
-        auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
+        auth.set_cookie(response, auth.create_token(user, session, user_agent=ua, ip=ip),
+                        _is_secure(request))
         return LoginResponse(
             status="REQUIRES_FIRST_TIME_SETUP",
             needs_password_change=bool(user.temp_password_active),
@@ -135,7 +147,8 @@ def login(payload: LoginRequest, response: Response, request: Request,
                         _is_secure(request))
         return LoginResponse(status="REQUIRES_2FA")
 
-    auth.set_cookie(response, auth.create_token(user, session), _is_secure(request))
+    auth.set_cookie(response, auth.create_token(user, session, user_agent=ua, ip=ip),
+                    _is_secure(request))
     return LoginResponse(status="SUCCESS", user=_to_read(user))
 
 
@@ -147,7 +160,19 @@ def _maybe_finish_onboarding(user: User) -> None:
 
 
 @router.post("/logout", status_code=204)
-def logout(response: Response):
+def logout(request: Request, response: Response,
+           session: Session = Depends(get_session)):
+    # Server-seitige Sitzung widerrufen (nicht nur das Cookie löschen), damit
+    # ein noch gültiges Token nach dem Abmelden nicht weiterverwendet werden kann.
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        header = request.headers.get("authorization") or ""
+        if header.lower().startswith("bearer "):
+            token = header[7:].strip()
+    if token:
+        payload = auth.decode_token(token, session)
+        if payload and payload.get("jti"):
+            auth.revoke_session(session, payload["jti"])
     auth.clear_cookie(response)
 
 
@@ -283,7 +308,9 @@ def twofactor_verify(payload: TwoFactorVerifyRequest, response: Response,
     secret = twofactor.decrypt(pending.two_factor_secret)
     if not secret or not twofactor.verify(secret, payload.code):
         raise HTTPException(401, "Code ungültig")
-    auth.set_cookie(response, auth.create_token(pending, session), _is_secure(request))
+    ua, ip = _session_meta(request)
+    auth.set_cookie(response, auth.create_token(pending, session, user_agent=ua, ip=ip),
+                    _is_secure(request))
     return LoginResponse(status="SUCCESS", user=_to_read(pending))
 
 

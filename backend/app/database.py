@@ -74,9 +74,10 @@ _tenant_engines: dict[str, Engine] = {str(_PRIMARY_PATH): engine}
 # Tabellen-Aufteilung
 # --------------------------------------------------------------------------
 def _system_tables() -> list:
-    from .models import User, UserDatabase, DatabaseAccess, AppSetting
+    from .models import (User, UserDatabase, DatabaseAccess, UserSession,
+                         AppSetting)
     return [User.__table__, UserDatabase.__table__, DatabaseAccess.__table__,
-            AppSetting.__table__]
+            UserSession.__table__, AppSetting.__table__]
 
 
 def _domain_tables() -> list:

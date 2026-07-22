@@ -15,7 +15,8 @@ from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
                notifier, outbound, tenancy, updater as updater_mod)
 from .routers import (admin, auth as auth_router, backups, dashboard,
                       databases as databases_router, external,
-                      ha, imports, meters, mqtt, ocr as ocr_router, readings,
+                      ha, imports, meters, monitoring as monitoring_router,
+                      mqtt, ocr as ocr_router, readings,
                       settings as settings_router, systems, tariffs,
                       update as update_router)
 
@@ -40,6 +41,7 @@ app.add_middleware(
 
 app.include_router(admin.router)
 app.include_router(databases_router.router)
+app.include_router(monitoring_router.router)
 app.include_router(dashboard.router)
 app.include_router(ocr_router.router)
 app.include_router(auth_router.router)
