@@ -1,3 +1,18 @@
+# --------------------------------------------------------------------------
+# Stufe 1: Frontend bauen (React + Mantine + Vite -> statische Dateien)
+# --------------------------------------------------------------------------
+FROM node:22-slim AS web
+WORKDIR /web
+# Erst nur die Manifeste kopieren: der npm-ci-Schritt bleibt gecacht, solange
+# sich die Abhängigkeiten nicht ändern.
+COPY webapp/package.json webapp/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY webapp/ ./
+RUN npm run build          # -> /web/dist
+
+# --------------------------------------------------------------------------
+# Stufe 2: Python-Backend
+# --------------------------------------------------------------------------
 FROM python:3.12-slim
 WORKDIR /app
 
@@ -34,7 +49,8 @@ RUN python -c "import cv2, pytesseract, PIL; \
     print('OpenCV', cv2.__version__, '| Tesseract', pytesseract.get_tesseract_version())"
 
 COPY app ./app
-COPY frontend ./frontend
+# Statisches Frontend aus der Build-Stufe (ersetzt das frühere Vue-Frontend).
+COPY --from=web /web/dist ./frontend
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 CMD ["/run.sh"]
