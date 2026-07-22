@@ -281,6 +281,30 @@ def _m012_tariff_contract(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE tariffs ADD COLUMN notice_period_days INTEGER"))
 
 
+def _m013_billing(conn: Connection) -> None:
+    """Abrechnungserfassung (TICKET-3.1): Kennzeichen `is_billed` an Ablesungen
+    (eine Ablesung, deren Kosten aus einer echten Abrechnung stammen) und eine
+    Tabelle `billing_years` mit den offiziell abgerechneten Jahreskosten je
+    System. Beides rückwärtskompatibel: Bestandsablesungen bleiben is_billed=0,
+    die Kostenrechnung greift weiter auf Tarife zurück."""
+    cols = _columns(conn, "readings")
+    if "is_billed" not in cols:
+        conn.execute(text("ALTER TABLE readings ADD COLUMN is_billed BOOLEAN NOT NULL DEFAULT 0"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS billing_years (
+            id VARCHAR PRIMARY KEY,
+            system_id VARCHAR NOT NULL REFERENCES systems(id),
+            year INTEGER NOT NULL,
+            cost FLOAT NOT NULL,
+            is_billed BOOLEAN NOT NULL DEFAULT 1,
+            erstellt_am DATETIME NOT NULL
+        )
+    """))
+    conn.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_billing_years_system_year "
+        "ON billing_years (system_id, year)"))
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -294,6 +318,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (10, "grundpreis von Monats- auf Jahresbetrag umstellen", _m010_grundpreis_yearly),
     (11, "Zwei-Faktor und Erstanmelde-Zwang an users", _m011_two_factor),
     (12, "Vertragsunterlage und Kuendigungsfrist an tariffs", _m012_tariff_contract),
+    (13, "Abrechnungserfassung: is_billed an readings + billing_years-Tabelle", _m013_billing),
 ]
 
 

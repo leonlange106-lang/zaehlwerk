@@ -55,6 +55,9 @@ class ReadingCreate(BaseModel):
     meter_start: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
     source: str = Field("manual", pattern="^(manual|ha_api)$")
+    # Abrechnungsablesung: die Kosten stammen aus einer echten Abrechnung. Ist
+    # dies gesetzt und cost > 0, wird das Abrechnungsjahr fortgeschrieben.
+    is_billed: bool = False
 
     @model_validator(mode="after")
     def _meter_start_needs_replace(self):
@@ -77,6 +80,7 @@ class ReadingRead(BaseModel):
     meter_start: Optional[float] = None
     note: Optional[str] = None
     source: str = "manual"
+    is_billed: bool = False
     # abgeleitete Felder
     consumption: Optional[float] = None
     consumption_per_day: Optional[float] = None
@@ -87,6 +91,22 @@ class ReadingRead(BaseModel):
     value_kwh: Optional[float] = None
     consumption_kwh: Optional[float] = None
     consumption_per_day_kwh: Optional[float] = None
+
+
+# ---------- Abrechnungsjahre (TICKET-3.1) ----------
+class BillingYearCreate(BaseModel):
+    year: int = Field(..., ge=1990, le=2100)
+    cost: float = Field(..., ge=0, le=1_000_000)
+    is_billed: bool = True
+
+
+class BillingYearRead(BaseModel):
+    id: str
+    system_id: str
+    year: int
+    cost: float
+    is_billed: bool
+    erstellt_am: datetime
 
 
 # ---------- Statistik / Chart ----------

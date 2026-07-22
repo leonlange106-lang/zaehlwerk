@@ -13,7 +13,7 @@ from .database import engine, system_engine, tenant_engine, init_db
 from .version import APP_VERSION
 from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
                notifier, outbound, tenancy, updater as updater_mod)
-from .routers import (admin, auth as auth_router, backups, dashboard,
+from .routers import (admin, auth as auth_router, backups, billing, dashboard,
                       databases as databases_router, external,
                       ha, imports, meters, monitoring as monitoring_router,
                       mqtt, ocr as ocr_router, readings,
@@ -47,6 +47,7 @@ app.include_router(ocr_router.router)
 app.include_router(auth_router.router)
 app.include_router(systems.router)
 app.include_router(readings.router)
+app.include_router(billing.router)
 app.include_router(imports.router)
 app.include_router(backups.router)
 app.include_router(external.router)

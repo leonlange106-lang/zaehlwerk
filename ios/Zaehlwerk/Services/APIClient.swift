@@ -126,6 +126,13 @@ final class APIClient: @unchecked Sendable {
         }
     }
 
+    /// Lädt eine Binärantwort (z. B. PDF-Bericht) mit denselben Auth-Headern.
+    func fetchData(path: String) async throws -> Data {
+        let (data, _) = try await raw(method: "GET", path: path, query: [:],
+                                      body: Optional<Empty>.none)
+        return data
+    }
+
     // MARK: - Kern
 
     private func send<B: Encodable, T: Decodable>(

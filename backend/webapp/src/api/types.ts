@@ -133,6 +133,15 @@ export interface Reading {
   consumption_per_day_kwh?: number | null;
 }
 
+export interface BillingYear {
+  id: string;
+  system_id: string;
+  year: number;
+  cost: number;
+  is_billed: boolean;
+  erstellt_am: string;
+}
+
 export interface SystemStats {
   total_consumption: number;
   total_cost: number;

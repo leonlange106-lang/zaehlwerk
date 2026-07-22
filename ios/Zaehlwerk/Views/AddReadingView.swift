@@ -33,14 +33,20 @@ struct AddReadingView: View {
                     Text("Aktueller Zählerstand in \(system.unit).")
                 }
 
-                Section("Optional") {
-                    HStack {
-                        TextField("Kosten", text: $model.costText)
-                            .keyboardType(.decimalPad)
-                        Text("€").foregroundStyle(.secondary)
+                Section {
+                    Toggle("Abrechnung nach Ablesung", isOn: $model.isBilled.animation(.easeInOut))
+                    if model.isBilled {
+                        HStack {
+                            TextField("Abgerechnete Kosten", text: $model.costText)
+                                .keyboardType(.decimalPad)
+                            Text("€").foregroundStyle(.secondary)
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     TextField("Notiz", text: $model.note, axis: .vertical)
                         .lineLimit(1...3)
+                } footer: {
+                    Text("Bei einer Abrechnungsablesung fließen die tatsächlichen Kosten ins Abrechnungsjahr ein.")
                 }
 
                 Section {

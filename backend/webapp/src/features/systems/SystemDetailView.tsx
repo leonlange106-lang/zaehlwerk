@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, Card, SimpleGrid, Text, Table, Badge, Button, ActionIcon,
-  Skeleton, Alert, Divider, NumberInput, Textarea, Switch, FileButton, Loader, Menu,
+  Skeleton, Alert, Divider, NumberInput, Textarea, Switch, FileButton, Loader, Menu, Collapse,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
@@ -15,7 +15,7 @@ import dayjs from 'dayjs';
 import type { EChartsOption } from 'echarts';
 import { useApiData } from '../../api/useApi';
 import { api, apiPost, apiPatch, apiDelete, apiUpload, ApiError } from '../../api/client';
-import type { ChartData, Reading, SystemRead, SystemStats, OcrResult } from '../../api/types';
+import type { ChartData, Reading, SystemRead, SystemStats, OcrResult, BillingYear } from '../../api/types';
 import { EChart } from '../../components/EChart';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtValue, fmtCost, fmtDate, fmtNumber } from '../../util/format';
@@ -33,6 +33,7 @@ export function SystemDetailView() {
   const stats = useApiData<SystemStats>(`/api/systems/${id}/stats`);
   const chart = useApiData<ChartData>(`/api/systems/${id}/chart-data`);
   const readings = useApiData<Reading[]>(`/api/systems/${id}/readings`);
+  const billing = useApiData<BillingYear[]>(`/api/systems/${id}/billing-years`);
 
   const unit = system.data?.einheit ?? '';
 
@@ -40,6 +41,7 @@ export function SystemDetailView() {
     void stats.reload();
     void chart.reload();
     void readings.reload();
+    void billing.reload();
   }
 
   async function remove(r: Reading) {
@@ -131,6 +133,35 @@ export function SystemDetailView() {
       )}
 
       <MetersCard systemId={id} canWrite={canWrite} />
+
+      {(billing.data ?? []).length > 0 && (
+        <Card>
+          <Title order={5} mb="sm">Abrechnungsjahre</Title>
+          <Table>
+            <Table.Thead><Table.Tr><Table.Th>Jahr</Table.Th><Table.Th ta="right">Abgerechnete Kosten</Table.Th>{canWrite && <Table.Th />}</Table.Tr></Table.Thead>
+            <Table.Tbody>
+              {(billing.data ?? []).map((b) => (
+                <Table.Tr key={b.id}>
+                  <Table.Td>{b.year}</Table.Td>
+                  <Table.Td ta="right">{fmtCost(b.cost)}</Table.Td>
+                  {canWrite && (
+                    <Table.Td ta="right">
+                      <ActionIcon color="red" variant="subtle" aria-label="Löschen"
+                        onClick={async () => {
+                          if (!confirm(`Abrechnungsjahr ${b.year} löschen?`)) return;
+                          try { await api(`/api/billing-years/${b.id}`, { method: 'DELETE' }); void billing.reload(); }
+                          catch (e) { notifications.show({ color: 'red', message: e instanceof ApiError ? e.message : 'Fehler' }); }
+                        }}>
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Table.Td>
+                  )}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
 
       <Card>
         <Title order={5} mb="sm">Ablesungen</Title>
@@ -231,9 +262,9 @@ function AddReadingForm({ systemId, unit, kwhFactor, onSaved }: { systemId: stri
 
   const form = useForm<{
     datum: Date | null; value: number | ''; cost: number | ''; note: string;
-    meter_replaced: boolean; meter_start: number | '';
+    meter_replaced: boolean; meter_start: number | ''; is_billed: boolean;
   }>({
-    initialValues: { datum: new Date(), value: '', cost: '', note: '', meter_replaced: false, meter_start: '' },
+    initialValues: { datum: new Date(), value: '', cost: '', note: '', meter_replaced: false, meter_start: '', is_billed: false },
     validate: {
       datum: (v) => (v ? null : 'Datum erforderlich'),
       value: (v) => (v === '' || Number.isNaN(Number(v)) ? 'Zählerstand erforderlich' : null),
@@ -272,10 +303,12 @@ function AddReadingForm({ systemId, unit, kwhFactor, onSaved }: { systemId: stri
       await apiPost(`/api/systems/${systemId}/readings`, {
         datum: dayjs(values.datum).format('YYYY-MM-DD'),
         value: Number(values.value),
-        cost: values.cost === '' ? undefined : Number(values.cost),
+        // Kosten nur bei Abrechnungsablesung; sonst gar nicht senden.
+        cost: values.is_billed && values.cost !== '' ? Number(values.cost) : undefined,
         meter_replaced: values.meter_replaced,
         meter_start: values.meter_replaced && values.meter_start !== '' ? Number(values.meter_start) : undefined,
         note: values.note.trim() || undefined,
+        is_billed: values.is_billed,
         source: 'manual',
       });
       notifications.show({ message: 'Ablesung gespeichert', color: 'teal' });
@@ -301,7 +334,7 @@ function AddReadingForm({ systemId, unit, kwhFactor, onSaved }: { systemId: stri
         </FileButton>
       </Group>
       <form onSubmit={form.onSubmit(submit)}>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
           <DatePickerInput label="Datum" valueFormat="DD.MM.YYYY" {...form.getInputProps('datum')} />
           <NumberInput
             label={`Zählerstand (${unit})`} decimalScale={3} {...form.getInputProps('value')}
@@ -309,9 +342,20 @@ function AddReadingForm({ systemId, unit, kwhFactor, onSaved }: { systemId: stri
               ? `≈ ${fmtNumber(Number(form.values.value) * kwhFactor)} kWh`
               : undefined}
           />
-          <NumberInput label="Kosten (€)" decimalScale={2} {...form.getInputProps('cost')} />
           <Textarea label="Notiz" autosize minRows={1} {...form.getInputProps('note')} />
         </SimpleGrid>
+
+        <Switch mt="sm" label="Abrechnung nach Ablesung (Kosten aus echter Rechnung)"
+                {...form.getInputProps('is_billed', { type: 'checkbox' })} />
+        {/* Kosten-Eingabe wird beim Umschalten ein-/ausgeblendet und dabei
+            komplett aus dem DOM entfernt – kein reines Ausblenden per Opacity. */}
+        <Collapse in={form.values.is_billed} transitionDuration={200} transitionTimingFunction="ease">
+          {form.values.is_billed && (
+            <NumberInput mt="sm" label="Abgerechnete Kosten (€)" decimalScale={2} w={220}
+                         description="Fließt in das Abrechnungsjahr ein" {...form.getInputProps('cost')} />
+          )}
+        </Collapse>
+
         <Divider my="sm" />
         <Group align="flex-end">
           <Switch label="Zählertausch" {...form.getInputProps('meter_replaced', { type: 'checkbox' })} />

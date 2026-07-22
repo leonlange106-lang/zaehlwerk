@@ -42,10 +42,11 @@ struct ReadingCreateRequest: Encodable {
     let meter_start: Double?
     let note: String?
     let source: String
+    let is_billed: Bool
 
     init(date: Date, value: Double, cost: Double? = nil,
          meterReplaced: Bool = false, meterStart: Double? = nil,
-         note: String? = nil, source: String = "manual") {
+         note: String? = nil, source: String = "manual", isBilled: Bool = false) {
         self.datum = ReadingCreateRequest.dayFormatter.string(from: date)
         self.value = value
         self.cost = cost
@@ -53,6 +54,7 @@ struct ReadingCreateRequest: Encodable {
         self.meter_start = meterStart
         self.note = note
         self.source = source
+        self.is_billed = isBilled
     }
 
     static let dayFormatter: DateFormatter = {

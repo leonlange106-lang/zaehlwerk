@@ -57,7 +57,25 @@ class Reading(SQLModel, table=True):
     # `Reading.source` als Filterausdruck (z. B. beim Rohdaten-Export) war
     # nicht auswertbar.
     source: str = Field(default="manual", index=True)
+    # Abrechnungsablesung: Kosten stammen aus einer echten Abrechnung, nicht aus
+    # der Tarif-Schätzung. Löst beim Anlegen die Fortschreibung des
+    # Abrechnungsjahres aus (seit Migration 13).
+    is_billed: bool = Field(default=False)
 
+
+
+class BillingYear(SQLModel, table=True):
+    """Offiziell abgerechnete Jahreskosten eines Systems. Getrennt von der
+    tarifbasierten Schätzung: hier steht der Betrag der tatsächlichen Rechnung.
+    Je System und Jahr höchstens ein Eintrag (Unique-Index)."""
+    __tablename__ = "billing_years"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    system_id: str = Field(index=True, foreign_key="systems.id")
+    year: int = Field(index=True)
+    cost: float
+    is_billed: bool = True
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Meter(SQLModel, table=True):

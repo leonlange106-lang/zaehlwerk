@@ -105,6 +105,11 @@ struct SystemDetailView: View {
             } label: {
                 Label("Zähler verwalten", systemImage: "gauge.medium")
             }
+            NavigationLink {
+                ReportViewerView(systemID: system.id, systemName: system.name)
+            } label: {
+                Label("PDF-Bericht", systemImage: "doc.text")
+            }
         }
     }
 

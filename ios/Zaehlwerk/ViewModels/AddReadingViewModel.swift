@@ -13,6 +13,7 @@ final class AddReadingViewModel {
     var note = ""
     var meterReplaced = false
     var meterStartText = ""
+    var isBilled = false
 
     private(set) var isSaving = false
     var errorMessage: String?
@@ -47,10 +48,12 @@ final class AddReadingViewModel {
         let request = ReadingCreateRequest(
             date: date,
             value: value,
-            cost: parse(costText),
+            // Kosten nur bei einer Abrechnungsablesung übernehmen.
+            cost: isBilled ? parse(costText) : nil,
             meterReplaced: meterReplaced,
             meterStart: meterReplaced ? parse(meterStartText) : nil,
-            note: note.isEmpty ? nil : note
+            note: note.isEmpty ? nil : note,
+            isBilled: isBilled
         )
         do {
             _ = try await api.addReading(systemID: systemID, request)

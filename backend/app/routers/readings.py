@@ -18,6 +18,7 @@ from ..models import Meter, Reading, System, Tariff
 from ..schemas import (READING_SOURCES_ALL, BulkDeleteRequest, ChartData,
                        ReadingCreate, ReadingRead, StatsRead)
 from .settings import read_settings
+from .billing import _upsert_billing_year
 
 router = APIRouter(tags=["readings"])
 
@@ -38,6 +39,7 @@ def _reading_dict(r: Reading) -> dict:
         "meter_start": getattr(r, "meter_start", None),
         "note": r.note,
         "source": getattr(r, "source", None) or "manual",
+        "is_billed": bool(getattr(r, "is_billed", False)),
     }
 
 
@@ -187,10 +189,14 @@ def create_reading(system_id: str, payload: ReadingCreate, session: Session = De
         # Startstand nur bei Tausch übernehmen (Schema erzwingt das bereits).
         meter_start=payload.meter_start if payload.meter_replaced else None,
         note=payload.note,
+        is_billed=payload.is_billed,
     )
     session.add(r)
     session.commit()
     session.refresh(r)
+    # Abrechnungsablesung mit Kosten -> Abrechnungsjahr fortschreiben (TICKET-3.1).
+    if payload.is_billed and payload.cost and payload.cost > 0:
+        _upsert_billing_year(session, system_id, payload.datum.year, float(payload.cost))
     return ReadingRead(**_reading_dict(r))
 
 
@@ -205,9 +211,12 @@ def update_reading(reading_id: str, payload: ReadingCreate, session: Session = D
     r.meter_replaced = payload.meter_replaced
     r.meter_start = payload.meter_start if payload.meter_replaced else None
     r.note = payload.note
+    r.is_billed = payload.is_billed
     session.add(r)
     session.commit()
     session.refresh(r)
+    if payload.is_billed and payload.cost and payload.cost > 0:
+        _upsert_billing_year(session, r.system_id, payload.datum.year, float(payload.cost))
     return ReadingRead(**_reading_dict(r))
 
 
