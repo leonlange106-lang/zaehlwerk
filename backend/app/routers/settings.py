@@ -60,6 +60,10 @@ DEFAULTS: dict[str, object] = {
     # angebundenes System zu lange keinen neuen Wert geliefert hat.
     "mqtt_watchdog_enabled": True,
     "mqtt_watchdog_hours": 48,
+    # REST-Poller: fragt Systeme mit hinterlegter zusatzfelder["rest_url"] im
+    # festen Takt ab (ESPHome web_server, Shelly, generische JSON-Endpunkte).
+    "rest_poll_enabled": True,
+    "rest_poll_minutes": 15,
     # Rolle für neu übernommene Home-Assistant-Konten.
     "default_role": "writer",
     # Aufbewahrung des Änderungsprotokolls. Untergrenze 30 Tage, weil der
@@ -96,6 +100,8 @@ _CASTS = {
     "mqtt_interval": str,
     "mqtt_watchdog_enabled": _BOOL,
     "mqtt_watchdog_hours": int,
+    "rest_poll_enabled": _BOOL,
+    "rest_poll_minutes": int,
     "default_role": str,
     "audit_keep_days": int,
     "telemetry_keep_days": int,

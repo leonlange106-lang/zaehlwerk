@@ -42,7 +42,7 @@ class SystemRead(BaseModel):
 # Listener gesetzt und darf nicht über die Schnittstelle behauptet werden –
 # sonst ließen sich Datensätze als automatisch erfasst ausgeben.
 READING_SOURCES_CLIENT = ("manual", "ha_api")
-READING_SOURCES_ALL = ("manual", "ha_api", "mqtt", "import")
+READING_SOURCES_ALL = ("manual", "ha_api", "mqtt", "import", "rest")
 
 
 class ReadingCreate(BaseModel):
@@ -155,6 +155,8 @@ class AppSettingsRead(BaseModel):
     mqtt_interval: str = "daily"
     mqtt_watchdog_enabled: bool = True
     mqtt_watchdog_hours: int = 48
+    rest_poll_enabled: bool = True
+    rest_poll_minutes: int = 15
     default_role: str = "writer"
     audit_keep_days: int = 365
     telemetry_keep_days: int = 0
@@ -202,6 +204,9 @@ class AppSettingsUpdate(BaseModel):
     # Untergrenze 1 h waere praktisch dauerbeschaeftigt, Obergrenze 14 Tage
     # macht die Meldung nutzlos verspaetet.
     mqtt_watchdog_hours: Optional[int] = Field(None, ge=1, le=336)
+    rest_poll_enabled: Optional[bool] = None
+    # Untergrenze 1 min (schnelle Test-Zyklen), Obergrenze 1 Tag.
+    rest_poll_minutes: Optional[int] = Field(None, ge=1, le=1440)
     default_role: Optional[str] = Field(None, pattern="^(guest|viewer|writer|admin)$")
     # Untergrenze entspricht der Schutzfrist der Trigger – ein kleinerer Wert
     # würde von der Datenbank ohnehin nicht durchgesetzt.

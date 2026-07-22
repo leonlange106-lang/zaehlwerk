@@ -1,5 +1,11 @@
 """Systeme = Stammdaten in SQLite. Kein Hard-Delete (nur archivieren via aktiv=False)."""
+import json
+import os
+import urllib.request
+from typing import Literal, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..database import get_session
@@ -7,6 +13,55 @@ from ..models import Meter, Reading, System, Tariff
 from ..schemas import SystemCreate, SystemRead, SystemUpdate
 
 router = APIRouter(prefix="/api/systems", tags=["systems"])
+
+
+class BindingTest(BaseModel):
+    """Live-Prüfung einer Smart-Home-Anbindung, bevor sie am System gespeichert
+    wird – speist den „Testen"-Knopf der Konfigurationsmaske."""
+    kind: Literal["ha", "rest"]
+    entity_id: Optional[str] = None        # kind=ha
+    url: Optional[str] = None              # kind=rest
+    path: Optional[str] = None             # kind=rest (JSON-Punktpfad, optional)
+
+
+@router.post("/binding/test")
+def test_binding(payload: BindingTest):
+    """Fragt die angegebene Quelle EINMAL ab und meldet den aktuellen Wert –
+    ohne etwas zu speichern. Der Kill-Switch greift wie überall: lokale Ziele
+    (ESPHome/Tasmota im LAN, Supervisor) bleiben erreichbar, öffentliche werden
+    im Offline-Modus vom Socket-Guard blockiert."""
+    if payload.kind == "ha":
+        entity = (payload.entity_id or "").strip()
+        if not entity:
+            raise HTTPException(422, "entity_id fehlt")
+        token = os.environ.get("SUPERVISOR_TOKEN")
+        if not token:
+            raise HTTPException(501, "HA-Entity-Test nur im Home-Assistant-Add-on verfügbar")
+        req = urllib.request.Request(
+            f"http://supervisor/core/api/states/{entity}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read())
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"HA/Entity nicht erreichbar: {exc}"}
+        attrs = data.get("attributes") or {}
+        return {"ok": True, "value": data.get("state"),
+                "unit": attrs.get("unit_of_measurement"),
+                "name": attrs.get("friendly_name"), "matched_path": entity}
+
+    # kind == "rest"
+    from .. import rest_poller
+    url = (payload.url or "").strip()
+    if not url:
+        raise HTTPException(422, "url fehlt")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(422, "url muss mit http:// oder https:// beginnen")
+    result = rest_poller.fetch_rest_value(url, (payload.path or "").strip() or None)
+    return {"ok": result["value"] is not None, "value": result["value"],
+            "matched_path": result["matched_path"], "raw": result["raw"],
+            "error": result["error"]}
 
 
 @router.get("", response_model=list[SystemRead])

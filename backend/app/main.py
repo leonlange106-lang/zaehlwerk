@@ -171,6 +171,11 @@ async def _startup():
     asyncio.create_task(notifier.watcher())
     asyncio.create_task(backup_mod.scheduler())
     asyncio.create_task(updater_mod.check_scheduler())
+    # REST-Poller: fragt Geräte mit hinterlegter rest_url ab. Nach dem
+    # Socket-Guard gestartet, damit die Kill-Switch-Regeln greifen (lokale Ziele
+    # bleiben erreichbar, öffentliche werden im Offline-Modus blockiert).
+    from . import rest_poller
+    asyncio.create_task(rest_poller.scheduler())
     # MQTT nach dem Socket-Guard starten: ein Broker im eigenen Netz ist von
     # der Sperre nicht betroffen, ein oeffentlicher schon - und genau so soll es sein.
     await asyncio.to_thread(mqtt_client.boot)
