@@ -34,7 +34,17 @@ class SystemRead(BaseModel):
     icon: str
     zusatzfelder: dict[str, Any]
     aktiv: bool
+    sort_index: int = 0
     erstellt_am: datetime
+
+
+class SystemReorderItem(BaseModel):
+    id: str
+    sort_index: int = Field(..., ge=0, le=100000)
+
+
+class SystemReorder(BaseModel):
+    order: list[SystemReorderItem]
 
 
 # ---------- Ablesungen ----------

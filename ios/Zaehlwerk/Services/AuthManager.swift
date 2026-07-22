@@ -72,6 +72,17 @@ final class AuthManager {
         config.baseURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Cloudflare Access (Service-Token, optional)
+
+    var cfAccessClientId: String {
+        get { config.cfClientId ?? "" }
+        set { config.cfClientId = newValue.trimmingCharacters(in: .whitespaces) }
+    }
+    var cfAccessClientSecret: String {
+        get { config.cfClientSecret ?? "" }
+        set { config.cfClientSecret = newValue.trimmingCharacters(in: .whitespaces) }
+    }
+
     // MARK: - Anmeldung
 
     func login(username: String, password: String) async {

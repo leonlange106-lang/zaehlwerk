@@ -7,11 +7,20 @@ import {
 import { notifications } from '@mantine/notifications';
 import {
   IconAlertTriangle, IconPlus, IconDots, IconPencil, IconArchive, IconTrash,
-  IconArchiveOff, IconChevronDown,
+  IconArchiveOff, IconChevronDown, IconGripVertical, IconArrowsSort, IconCheck,
 } from '@tabler/icons-react';
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useApiData } from '../../api/useApi';
-import { apiGet, apiPatch, apiDelete, ApiError } from '../../api/client';
-import type { DashboardData, SystemRead } from '../../api/types';
+import { apiGet, apiPatch, apiDelete, api, ApiError } from '../../api/client';
+import type { DashboardData, DashboardSystem, SystemRead } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtValue, fmtDate } from '../../util/format';
 import { SystemFormModal } from './SystemFormModal';
@@ -28,9 +37,39 @@ export function ReadingsView() {
   const [formOpen, setFormOpen] = useState(false);
   const [editSystem, setEditSystem] = useState<SystemRead | undefined>();
   const [showArchived, setShowArchived] = useState(false);
+  const [sortMode, setSortMode] = useState(false);
+  const [order, setOrder] = useState<DashboardSystem[]>([]);
 
   const systems = dash.data?.systems ?? [];
   const archivedOnly = (archived.data ?? []).filter((s) => !s.aktiv);
+  const rowsToShow = sortMode ? order : systems;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function startSort() { setOrder(systems.map((s) => ({ ...s }))); setSortMode(true); }
+
+  async function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIdx = order.findIndex((s) => s.id === active.id);
+    const newIdx = order.findIndex((s) => s.id === over.id);
+    const next = arrayMove(order, oldIdx, newIdx);
+    const prev = order;
+    setOrder(next);                       // optimistisch
+    try {
+      await api('/api/systems/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ order: next.map((s, i) => ({ id: s.id, sort_index: i })) }),
+      });
+      void dash.reload();
+    } catch (e) {
+      setOrder(prev);                     // Rollback bei Fehler
+      notifications.show({ color: 'red', message: e instanceof ApiError ? e.message : 'Sortieren fehlgeschlagen' });
+    }
+  }
 
   function reloadAll() {
     void dash.reload();
@@ -81,9 +120,18 @@ export function ReadingsView() {
           <Badge variant="light" color="gray">{systems.length} Systeme</Badge>
         </Group>
         {canWrite && (
-          <Button size="xs" leftSection={<IconPlus size={16} />} onClick={openCreate}>
-            System anlegen
-          </Button>
+          <Group gap="xs">
+            {systems.length > 1 && (
+              <Button size="xs" variant={sortMode ? 'filled' : 'default'} color={sortMode ? 'teal' : undefined}
+                      leftSection={sortMode ? <IconCheck size={16} /> : <IconArrowsSort size={16} />}
+                      onClick={() => (sortMode ? setSortMode(false) : startSort())}>
+                {sortMode ? 'Fertig' : 'Sortieren'}
+              </Button>
+            )}
+            <Button size="xs" leftSection={<IconPlus size={16} />} onClick={openCreate}>
+              System anlegen
+            </Button>
+          </Group>
         )}
       </Group>
 
@@ -95,45 +143,56 @@ export function ReadingsView() {
           <Table>
             <Table.Thead>
               <Table.Tr>
+                {sortMode && <Table.Th w={36} />}
                 <Table.Th>System</Table.Th>
                 <Table.Th>Typ</Table.Th>
                 <Table.Th ta="right">Aktueller Stand</Table.Th>
                 <Table.Th ta="right">Ø / Tag</Table.Th>
                 <Table.Th>Letzte Ablesung</Table.Th>
-                {canWrite && <Table.Th />}
+                {canWrite && !sortMode && <Table.Th />}
               </Table.Tr>
             </Table.Thead>
-            <Table.Tbody>
-              {systems.map((s) => (
-                <Table.Tr key={s.id}>
-                  <Table.Td>
-                    <Group gap={8} wrap="nowrap">
-                      <span style={{ width: 10, height: 10, borderRadius: 5, background: s.farbe, display: 'inline-block' }} />
-                      <Anchor component={Link} to={`/readings/${s.id}`} size="sm">{s.name}</Anchor>
-                    </Group>
-                  </Table.Td>
-                  <Table.Td><Text size="sm" c="dimmed">{s.typ}</Text></Table.Td>
-                  <Table.Td ta="right">{fmtValue(s.latest, s.einheit)}</Table.Td>
-                  <Table.Td ta="right">{fmtValue(s.avg_per_day, s.einheit)}</Table.Td>
-                  <Table.Td>{fmtDate(s.latest_datum)}</Table.Td>
-                  {canWrite && (
-                    <Table.Td ta="right">
-                      <Menu position="bottom-end" withinPortal>
-                        <Menu.Target>
-                          <ActionIcon variant="subtle" color="gray" aria-label="Aktionen"><IconDots size={16} /></ActionIcon>
-                        </Menu.Target>
-                        <Menu.Dropdown>
-                          <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => void openEdit(s.id)}>Bearbeiten</Menu.Item>
-                          <Menu.Item leftSection={<IconArchive size={14} />} onClick={() => void setActive(s.id, false)}>Archivieren</Menu.Item>
-                          <Menu.Divider />
-                          <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => void remove(s.id, s.name)}>Löschen …</Menu.Item>
-                        </Menu.Dropdown>
-                      </Menu>
+            {sortMode ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={order.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                  <Table.Tbody>
+                    {rowsToShow.map((s) => <SortableSystemRow key={s.id} system={s} />)}
+                  </Table.Tbody>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <Table.Tbody>
+                {rowsToShow.map((s) => (
+                  <Table.Tr key={s.id}>
+                    <Table.Td>
+                      <Group gap={8} wrap="nowrap">
+                        <span style={{ width: 10, height: 10, borderRadius: 5, background: s.farbe, display: 'inline-block' }} />
+                        <Anchor component={Link} to={`/readings/${s.id}`} size="sm">{s.name}</Anchor>
+                      </Group>
                     </Table.Td>
-                  )}
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
+                    <Table.Td><Text size="sm" c="dimmed">{s.typ}</Text></Table.Td>
+                    <Table.Td ta="right">{fmtValue(s.latest, s.einheit)}</Table.Td>
+                    <Table.Td ta="right">{fmtValue(s.avg_per_day, s.einheit)}</Table.Td>
+                    <Table.Td>{fmtDate(s.latest_datum)}</Table.Td>
+                    {canWrite && (
+                      <Table.Td ta="right">
+                        <Menu position="bottom-end" withinPortal>
+                          <Menu.Target>
+                            <ActionIcon variant="subtle" color="gray" aria-label="Aktionen"><IconDots size={16} /></ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => void openEdit(s.id)}>Bearbeiten</Menu.Item>
+                            <Menu.Item leftSection={<IconArchive size={14} />} onClick={() => void setActive(s.id, false)}>Archivieren</Menu.Item>
+                            <Menu.Divider />
+                            <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => void remove(s.id, s.name)}>Löschen …</Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
+                      </Table.Td>
+                    )}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            )}
           </Table>
         </Table.ScrollContainer>
       )}
@@ -187,5 +246,33 @@ export function ReadingsView() {
         onSaved={() => { setFormOpen(false); reloadAll(); }}
       />
     </Card>
+  );
+}
+
+// Sortierbare Zeile im „Sortieren"-Modus: Griff links, Klick-Navigation aus.
+function SortableSystemRow({ system: s }: { system: DashboardSystem }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform), transition,
+    background: isDragging ? 'var(--mantine-color-teal-light)' : undefined,
+  };
+  return (
+    <Table.Tr ref={setNodeRef} style={style}>
+      <Table.Td>
+        <ActionIcon variant="subtle" color="gray" {...attributes} {...listeners} style={{ cursor: 'grab' }} aria-label="Verschieben">
+          <IconGripVertical size={16} />
+        </ActionIcon>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={8} wrap="nowrap">
+          <span style={{ width: 10, height: 10, borderRadius: 5, background: s.farbe, display: 'inline-block' }} />
+          <Text size="sm">{s.name}</Text>
+        </Group>
+      </Table.Td>
+      <Table.Td><Text size="sm" c="dimmed">{s.typ}</Text></Table.Td>
+      <Table.Td ta="right">{fmtValue(s.latest, s.einheit)}</Table.Td>
+      <Table.Td ta="right">{fmtValue(s.avg_per_day, s.einheit)}</Table.Td>
+      <Table.Td>{fmtDate(s.latest_datum)}</Table.Td>
+    </Table.Tr>
   );
 }

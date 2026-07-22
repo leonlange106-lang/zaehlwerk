@@ -305,6 +305,19 @@ def _m013_billing(conn: Connection) -> None:
         "ON billing_years (system_id, year)"))
 
 
+def _m014_system_order(conn: Connection) -> None:
+    """Manuelle Sortierung der Systeme (TICKET-4.1): Spalte `sort_index`. Der
+    Bestand wird einmalig anhand der bisherigen Namensreihenfolge durchnummeriert,
+    damit sich die Anzeige beim Update nicht sichtbar umsortiert."""
+    cols = _columns(conn, "systems")
+    if "sort_index" not in cols:
+        conn.execute(text("ALTER TABLE systems ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0"))
+        rows = conn.execute(text("SELECT id FROM systems ORDER BY name")).fetchall()
+        for i, row in enumerate(rows):
+            conn.execute(text("UPDATE systems SET sort_index = :i WHERE id = :id"),
+                         {"i": i, "id": row[0]})
+
+
 MIGRATIONS: list[tuple[int, str, callable]] = [
     (1, "app_settings-Tabelle anlegen", _m001_app_settings),
     (2, "meters-Tabelle fuer Zaehler-Metadaten anlegen", _m002_meters),
@@ -319,6 +332,7 @@ MIGRATIONS: list[tuple[int, str, callable]] = [
     (11, "Zwei-Faktor und Erstanmelde-Zwang an users", _m011_two_factor),
     (12, "Vertragsunterlage und Kuendigungsfrist an tariffs", _m012_tariff_contract),
     (13, "Abrechnungserfassung: is_billed an readings + billing_years-Tabelle", _m013_billing),
+    (14, "Manuelle Sortierung: sort_index an systems", _m014_system_order),
 ]
 
 

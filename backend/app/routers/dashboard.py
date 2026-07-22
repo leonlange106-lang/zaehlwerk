@@ -42,7 +42,7 @@ def _default_layout(session: Session) -> list[dict]:
     System eine Kachel mit dem letzten Stand, darüber eine Verteilung.
     """
     systems = session.exec(
-        select(System).where(System.aktiv == True).order_by(System.name)  # noqa: E712
+        select(System).where(System.aktiv == True).order_by(System.sort_index, System.name)  # noqa: E712
     ).all()[:6]
 
     tiles: list[dict] = []
@@ -128,7 +128,7 @@ def dashboard_data(months: int = 24, session: Session = Depends(get_session)):
 
     sigma = _sigma(session)
     systems = session.exec(
-        select(System).where(System.aktiv == True).order_by(System.name)  # noqa: E712
+        select(System).where(System.aktiv == True).order_by(System.sort_index, System.name)  # noqa: E712
     ).all()
 
     out = []

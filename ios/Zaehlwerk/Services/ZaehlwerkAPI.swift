@@ -81,6 +81,13 @@ extension APIClient {
         try await delete("/api/systems/\(id)")
     }
 
+    /// Setzt die Anzeigereihenfolge der Systeme in einer Transaktion.
+    func updateSystemOrder(_ orderedIDs: [String]) async throws {
+        let items = orderedIDs.enumerated().map { SystemReorderItem(id: $1, sort_index: $0) }
+        let _: ReorderResponse = try await put("/api/systems/reorder",
+                                               body: SystemReorderRequest(order: items))
+    }
+
     /// Prüft eine Smart-Home-Anbindung (HA-Entity oder REST-URL) live, ohne zu
     /// speichern – speist den „Testen"-Knopf der Konfigurationsmaske.
     func testBinding(_ request: BindingTestRequest) async throws -> BindingTestResult {

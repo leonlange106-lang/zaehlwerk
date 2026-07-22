@@ -6,6 +6,9 @@ import SwiftUI
 struct ServerSetupView: View {
     @Environment(AuthManager.self) private var auth
     @State private var urlString = ""
+    @State private var showAccess = false
+    @State private var cfID = ""
+    @State private var cfSecret = ""
 
     var body: some View {
         NavigationStack {
@@ -22,6 +25,17 @@ struct ServerSetupView: View {
                     Text("Vollständige Basis-Adresse deiner Zählwerk-Instanz, inkl. https://.")
                 }
 
+                Section {
+                    Toggle("Cloudflare Access", isOn: $showAccess.animation())
+                    if showAccess {
+                        TextField("CF-Access-Client-Id", text: $cfID)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        SecureField("CF-Access-Client-Secret", text: $cfSecret)
+                    }
+                } footer: {
+                    Text("Nur nötig, wenn die Instanz hinter Cloudflare Access liegt. Service-Token aus dem Cloudflare-Dashboard; sicher im Schlüsselbund abgelegt.")
+                }
+
                 if let message = auth.errorMessage {
                     Section { Text(message).foregroundStyle(.red) }
                 }
@@ -29,6 +43,10 @@ struct ServerSetupView: View {
                 Section {
                     Button {
                         auth.configureServer(urlString)
+                        if showAccess {
+                            auth.cfAccessClientId = cfID
+                            auth.cfAccessClientSecret = cfSecret
+                        }
                         Task { await auth.bootstrap() }
                     } label: {
                         Text("Verbinden")
@@ -38,7 +56,12 @@ struct ServerSetupView: View {
                 }
             }
             .navigationTitle("Zählwerk")
-            .onAppear { urlString = auth.serverURLString }
+            .onAppear {
+                urlString = auth.serverURLString
+                cfID = auth.cfAccessClientId
+                cfSecret = auth.cfAccessClientSecret
+                showAccess = !cfID.isEmpty
+            }
         }
     }
 }

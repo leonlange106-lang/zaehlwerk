@@ -30,6 +30,9 @@ class System(SQLModel, table=True):
     zusatzfelder: dict = Field(default_factory=dict, sa_column=Column(JSON))
     # Kein Hard-Delete: Systeme werden archiviert (aktiv=False), Messreihen bleiben erhalten
     aktiv: bool = True
+    # Manuelle Anzeigereihenfolge (seit Migration 14). Kleinere Werte zuerst;
+    # bei Gleichstand entscheidet der Name.
+    sort_index: int = Field(default=0, index=True)
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
 
 

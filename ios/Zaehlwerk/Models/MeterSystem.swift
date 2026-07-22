@@ -58,6 +58,21 @@ struct SystemUpdateRequest: Encodable {
     var aktiv: Bool?
 }
 
+// MARK: - Manuelle Sortierung (PUT /api/systems/reorder)
+
+struct SystemReorderItem: Encodable {
+    let id: String
+    let sort_index: Int
+}
+
+struct SystemReorderRequest: Encodable {
+    let order: [SystemReorderItem]
+}
+
+struct ReorderResponse: Decodable {
+    let reordered: Int
+}
+
 // MARK: - Smart-Home-Anbindung live prüfen (POST /api/systems/binding/test)
 
 struct BindingTestRequest: Encodable {

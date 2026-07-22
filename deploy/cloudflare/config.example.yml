@@ -1,0 +1,23 @@
+# Beispiel-Ingress für cloudflared (Cloudflare Tunnel) vor Zählwerk.
+# Kopieren nach /etc/cloudflared/config.yml auf dem LXC-Host und die Platzhalter
+# ersetzen. Der Tunnel terminiert TLS bei Cloudflare; Zählwerk selbst hört nur
+# lokal (127.0.0.1:8000) und ist nicht direkt aus dem Internet erreichbar.
+#
+# Absicherung erfolgt in ZWEI Schichten:
+#   1. Cloudflare Access (im Dashboard konfiguriert) prüft die Identität VOR dem
+#      Tunnel und reicht ein signiertes JWT im Kopf Cf-Access-Jwt-Assertion durch.
+#   2. Zählwerk validiert dieses JWT serverseitig (siehe deploy/cloudflare/README).
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: zaehlwerk.example.com
+    service: http://127.0.0.1:8000
+    originRequest:
+      # Nur nötig, falls das Origin ein Selbstsigniertes Zertifikat spräche –
+      # hier reines HTTP im lokalen Netz, daher aus.
+      noTLSVerify: false
+      httpHostHeader: zaehlwerk.example.com
+  # Pflicht-Auffangregel: alles andere ablehnen.
+  - service: http_status:404

@@ -6,11 +6,11 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from ..database import get_session
 from ..models import Meter, Reading, System, Tariff
-from ..schemas import SystemCreate, SystemRead, SystemUpdate
+from ..schemas import SystemCreate, SystemRead, SystemReorder, SystemUpdate
 
 router = APIRouter(prefix="/api/systems", tags=["systems"])
 
@@ -72,16 +72,32 @@ def list_systems(
     stmt = select(System)
     if not include_archived:
         stmt = stmt.where(System.aktiv == True)  # noqa: E712
-    return session.exec(stmt.order_by(System.name)).all()
+    return session.exec(stmt.order_by(System.sort_index, System.name)).all()
 
 
 @router.post("", response_model=SystemRead, status_code=201)
 def create_system(payload: SystemCreate, session: Session = Depends(get_session)):
-    system = System(**payload.model_dump())
+    # Neues System hinten anstellen (höchster sort_index + 1).
+    max_idx = session.exec(select(func.max(System.sort_index))).one()
+    system = System(**payload.model_dump(), sort_index=(max_idx or 0) + 1)
     session.add(system)
     session.commit()
     session.refresh(system)
     return system
+
+
+@router.put("/reorder")
+def reorder_systems(payload: SystemReorder, session: Session = Depends(get_session)):
+    """Neue Reihenfolge in EINER Transaktion setzen: [{id, sort_index}, …].
+    Unbekannte IDs werden ignoriert; ein Fehler rollt alles zurück."""
+    known = {s.id: s for s in session.exec(select(System)).all()}
+    for item in payload.order:
+        system = known.get(item.id)
+        if system is not None:
+            system.sort_index = item.sort_index
+            session.add(system)
+    session.commit()
+    return {"reordered": len([i for i in payload.order if i.id in known])}
 
 
 @router.get("/{system_id}", response_model=SystemRead)

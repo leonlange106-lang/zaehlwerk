@@ -12,6 +12,21 @@ from .version import APP_VERSION
 # Jeder Eintrag: {"version", "date" (ISO), "title", "changes": [str, ...]}
 CHANGELOG: list[dict] = [
     {
+        "version": "3.29.0",
+        "date": "2026-07-22",
+        "title": "Tarife, Abrechnung, Sortierung, Fernzugriff",
+        "changes": [
+            "Tarif-Vertragsunterlagen per Drag&Drop/Foto hochladen; Anbieter, "
+            "Preise, Laufzeit und Kündigungsfrist werden per OCR vorgeschlagen.",
+            "In-App-Warnung, wenn ein Kündigungstermin naht.",
+            "Abrechnungsablesung: tatsächliche Kosten fließen ins Abrechnungsjahr.",
+            "Systeme per Drag&Drop (Web) bzw. Ziehen (iOS) sortieren.",
+            "iOS: Gas-Rechner (m³ ↔ kWh) und PDF-Bericht mit Teilen-Funktion.",
+            "Optionaler Fernzugriff über Cloudflare Tunnel + Access mit "
+            "serverseitiger JWT-Prüfung.",
+        ],
+    },
+    {
         "version": "3.28.0",
         "date": "2026-07-22",
         "title": "Wiederhergestellte Verwaltung: Systeme, Zähler, Dashboard, Update",

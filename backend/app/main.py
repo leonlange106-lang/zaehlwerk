@@ -1,17 +1,21 @@
 """Zählwerk – FastAPI-App. Liefert API + Frontend (statisch) aus einem Prozess."""
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+
+log = logging.getLogger("zaehlwerk.main")
 
 from .config import settings
 from sqlmodel import Session
 
 from .database import engine, system_engine, tenant_engine, init_db
 from .version import APP_VERSION
-from . import (audit, auth as auth_mod, backup as backup_mod, mqtt_client,
+from . import (audit, auth as auth_mod, backup as backup_mod, cf_access, mqtt_client,
                notifier, outbound, tenancy, updater as updater_mod)
 from .routers import (admin, auth as auth_router, backups, billing, dashboard,
                       databases as databases_router, external,
@@ -57,6 +61,24 @@ app.include_router(mqtt.router)
 app.include_router(settings_router.router)
 app.include_router(ha.router)
 app.include_router(update_router.router)
+
+
+@app.middleware("http")
+async def cf_access_middleware(request: Request, call_next):
+    """Optionale Cloudflare-Access-Prüfung (TICKET-5.1). Nur aktiv, wenn
+    konfiguriert; validiert das Access-JWT VOR der eigentlichen Anmeldung.
+    Läuft vor auth_middleware (zuletzt registriert = äußerste Schicht)."""
+    path = request.url.path
+    if cf_access.enabled() and path.startswith("/api") and path != "/api/health":
+        token = cf_access.token_from_request(request.headers, request.cookies)
+        if not token:
+            return JSONResponse({"detail": "Cloudflare Access erforderlich"}, status_code=403)
+        try:
+            await run_in_threadpool(cf_access.verify, token)
+        except Exception as exc:  # noqa: BLE001 – jede Ursache = Ablehnung
+            log.warning("Cloudflare-Access-Token abgelehnt: %s", exc)
+            return JSONResponse({"detail": "Cloudflare Access: Zugriff verweigert"}, status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")

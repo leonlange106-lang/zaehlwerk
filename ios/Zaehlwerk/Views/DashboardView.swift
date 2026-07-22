@@ -7,6 +7,7 @@ struct DashboardView: View {
     @State private var model = DashboardViewModel()
     @State private var showingAddSystem = false
     @State private var showingCustomize = false
+    @State private var showingReorder = false
 
     private var canWrite: Bool { auth.status?.canWrite ?? false }
     private let columns = [GridItem(.adaptive(minimum: 320), spacing: 16)]
@@ -71,6 +72,9 @@ struct DashboardView: View {
                             Button {
                                 Haptics.tap(); showingCustomize = true
                             } label: { Label("Dashboard anpassen", systemImage: "square.grid.2x2") }
+                            Button {
+                                Haptics.tap(); showingReorder = true
+                            } label: { Label("Systeme sortieren", systemImage: "arrow.up.arrow.down") }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }
@@ -91,6 +95,11 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showingCustomize) {
                 DashboardCustomizeView(tiles: model.tiles, systems: model.systems) {
+                    Task { await model.refresh() }
+                }
+            }
+            .sheet(isPresented: $showingReorder) {
+                SystemReorderView {
                     Task { await model.refresh() }
                 }
             }
