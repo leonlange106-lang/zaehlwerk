@@ -87,6 +87,32 @@ export interface DashboardData {
   recent: RecentReading[];
 }
 
+// ---------- Dashboard-Layout (Kacheln) ----------
+export type TileType =
+  | 'latest_reading' | 'line_chart' | 'pie_chart' | 'cost_summary' | 'trend' | 'cost_forecast';
+export type Timeframe = '7d' | '30d' | '90d' | 'ytd' | '12m' | 'all' | 'custom';
+
+export interface DashboardTile {
+  id: string;
+  type: TileType;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  system_id?: string | null;
+  system_ids?: string[];
+  timeframe?: Timeframe;
+  title?: string | null;
+  range_from?: string | null;
+  range_to?: string | null;
+}
+
+export interface DashboardLayoutResponse {
+  tiles: DashboardTile[];
+  is_default: boolean;
+  recovered?: boolean;
+}
+
 export interface Reading {
   id: string;
   system_id: string;
