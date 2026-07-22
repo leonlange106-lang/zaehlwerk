@@ -4,13 +4,13 @@ Nativer SwiftUI-Client für das dezentrale **Zählwerk**-Backend – kein WebVie
 keine Weiterleitung, sondern eine eigenständige App mit voller Funktionsparität
 zum Web-Tool (Zählerstände, Historie, Statistiken, Einstellungen).
 
-> **Status:** Schritt 1 (Netzwerk- & Datenschicht) **und** Schritt 2 (vollwertige
-> HIG-Screens) sind umgesetzt: Übersicht mit Kennzahlen und Miniatur-Verläufen,
-> System-Detail mit Swift-Charts-Diagramm und Ablesungsliste, Ablesungs-Eingabe,
-> Verlauf und Einstellungen (Passwort ändern, 2FA aktivieren) – im Look-and-Feel
+> **Status:** Schritte 1–3 sind umgesetzt. Netzwerk- & Datenschicht, vollwertige
+> HIG-Screens (Übersicht, System-Detail mit Swift-Charts-Diagramm, Ablesungs-
+> Eingabe, Verlauf, Einstellungen) sowie ein **SwiftData-Offline-Cache**
+> (Offline-First): zuletzt geladene Kennzahlen und Ablesungen sind auch ohne
+> Verbindung sichtbar, mit dezentem „Offline – Stand …"-Hinweis. Look-and-Feel
 > einer Apple-Systemapp mit Liquid-Glass-Materialien, dezenter Haptik und
-> Rücksicht auf „Transparenz reduzieren". Offen für Schritt 3: SwiftData-
-> Offline-Cache.
+> Rücksicht auf „Transparenz reduzieren".
 
 ## Architektur
 
@@ -29,11 +29,13 @@ ios/Zaehlwerk/
 │   ├── MeterSystem.swift      # System (Strom/Gas/Wasser/PV …)
 │   ├── Reading.swift          # Ablesung
 │   ├── Statistics.swift       # SystemStats + ChartData
-│   └── Dashboard.swift        # Dashboard-Aggregat (Systeme, Prognose, letzte Ablesungen)
+│   ├── Dashboard.swift        # Dashboard-Aggregat (Systeme, Prognose, letzte Ablesungen)
+│   └── CachedResponse.swift   # @Model – generischer Offline-Cache-Eintrag (SwiftData)
 ├── Services/                  # „Manager“- und Infrastruktur-Schicht
 │   ├── APIClient.swift        # generischer async/await-Client, Fehlerabbildung, Cookie→Token
 │   ├── ZaehlwerkAPI.swift     # typisierte Endpunkte (ein Aufruf je Route)
 │   ├── AuthManager.swift      # @MainActor @Observable: Anmeldefluss & Sitzung
+│   ├── CacheStore.swift       # @MainActor SwiftData-Cache (Offline-First, JSON-Blobs)
 │   ├── JSONCoding.swift       # De-/Encoder inkl. gemischter Datumsformate des Backends
 │   ├── KeychainStore.swift    # Keychain-Wrapper (Security)
 │   └── SessionStores.swift    # thread-sichere Wertzugriffe für den APIClient
@@ -49,7 +51,8 @@ ios/Zaehlwerk/
 │   ├── Format.swift           # lokalisierte Zahlen-/Kosten-/Datumsformate
 │   ├── Haptics.swift          # dezente UIImpact-/Notification-Haptik
 │   ├── ConsumptionChartView.swift    # Swift-Charts-Verlauf (Detail)
-│   └── Sparkline.swift        # Miniatur-Verlauf (Übersichtskarten)
+│   ├── Sparkline.swift        # Miniatur-Verlauf (Übersichtskarten)
+│   └── CacheStatusBar.swift   # „Offline – Stand …"-Hinweis
 └── Views/
     ├── ServerSetupView.swift         # Schritt 1: Auth-Fluss
     ├── LoginView.swift
@@ -142,9 +145,25 @@ konnte dort nicht kompiliert werden. Bitte in Xcode bauen; kleinere Anpassungen
   dezente Haptik (`Haptics`) bei Auswahl, Speichern und Fehlern.
 - Light/Dark automatisch über System-Farben und Materialien.
 
+## Offline-First (Schritt 3)
+
+`CacheStore` (SwiftData) legt jede erfolgreich geladene Antwort als JSON-Blob
+(`CachedResponse`) unter einem Schlüssel ab (`dashboard`, `readings.<id>`,
+`stats.<id>`, `chart.<id>`). Die ViewModels arbeiten write-through:
+
+1. Beim Öffnen wird sofort der letzte Cache-Stand angezeigt.
+2. Parallel wird über das Netz aktualisiert und der Cache zurückgeschrieben.
+3. Bricht das Netz weg, bleibt der Cache sichtbar; eine dezente Leiste zeigt
+   „Offline – Stand vor X Minuten".
+
+Der Cache verwendet ein **eigenes symmetrisches** `.iso8601`-Coder-Paar (der
+zentrale `JSONCoding`-Decoder erwartet String-Daten, sein Encoder schreibt aber
+Zahlen – ein Round-Trip darüber wäre inkonsistent). Beim Abmelden wird der Cache
+vollständig geleert (`CacheStore.clear()`), damit kein Konto fremde Daten sieht.
+
+SwiftData ist Teil des SDK – **kein** zusätzliches Paket nötig.
+
 ## Nächste Schritte
 
-- Schritt 3: SwiftData-Offline-Cache (Offline-First) mit Hintergrund-Sync, damit
-  zuletzt geladene Kennzahlen und Ablesungen auch offline sichtbar sind.
-- Schritt 4: Feinschliff – System anlegen/bearbeiten in der App, Widgets,
-  Diagramm-Interaktion (Scrubbing), Lokalisierung.
+- Feinschliff: System in der App anlegen/bearbeiten, Widgets, Diagramm-
+  Interaktion (Scrubbing), vollständige Lokalisierung.

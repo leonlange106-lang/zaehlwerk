@@ -43,6 +43,10 @@ struct DashboardView: View {
             .navigationTitle("Übersicht")
             .refreshable { await model.refresh() }
             .task { await model.load() }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                CacheStatusBar(isShowingCached: model.isShowingCached,
+                               lastUpdated: model.lastUpdated)
+            }
         }
     }
 }

@@ -128,6 +128,7 @@ final class AuthManager {
     func logout() async {
         try? await api.logout()
         config.clearSession()
+        CacheStore.shared.clear()
         status = nil
         phase = config.isConfigured ? .loggedOut : .unconfigured
     }

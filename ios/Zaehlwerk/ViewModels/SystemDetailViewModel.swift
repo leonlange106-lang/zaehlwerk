@@ -1,17 +1,21 @@
 import Foundation
 
-/// ViewModel des System-Details: lädt Statistik, Diagrammdaten und Ablesungen
-/// eines Systems parallel und hält sie beobachtbar.
+/// ViewModel des System-Details. Offline-First: Statistik, Diagramm und
+/// Ablesungen werden zuerst aus dem Cache gezeigt, dann parallel über das Netz
+/// aktualisiert und zurückgeschrieben.
 @MainActor
 @Observable
 final class SystemDetailViewModel {
     private let api = APIClient.shared
+    private let cache = CacheStore.shared
     let systemID: String
 
     private(set) var stats: SystemStats?
     private(set) var chart: ChartData?
     private(set) var readings: [Reading] = []
     private(set) var isLoading = false
+    private(set) var lastUpdated: Date?
+    private(set) var isShowingCached = false
     var errorMessage: String?
 
     nonisolated init(systemID: String) {
@@ -19,6 +23,7 @@ final class SystemDetailViewModel {
     }
 
     func load() async {
+        seedFromCache()
         if stats == nil && readings.isEmpty { isLoading = true }
         await fetch()
         isLoading = false
@@ -28,20 +33,48 @@ final class SystemDetailViewModel {
         await fetch()
     }
 
+    private func seedFromCache() {
+        guard stats == nil && chart == nil && readings.isEmpty else { return }
+        if let cached = cache.load(SystemStats.self, for: CacheStore.Key.stats(systemID)) {
+            stats = cached.value
+            lastUpdated = cached.updatedAt
+            isShowingCached = true
+        }
+        if let cached = cache.load(ChartData.self, for: CacheStore.Key.chart(systemID)) {
+            chart = cached.value
+        }
+        if let cached = cache.load([Reading].self, for: CacheStore.Key.readings(systemID)) {
+            readings = cached.value.sorted { $0.date > $1.date }
+        }
+    }
+
     private func fetch() async {
-        errorMessage = nil
         do {
-            // Parallel laden – die drei Aufrufe sind unabhängig.
             async let statsResult = api.fetchStats(systemID: systemID)
             async let chartResult = api.fetchChartData(systemID: systemID)
             async let readingsResult = api.fetchReadings(systemID: systemID)
 
-            stats = try await statsResult
-            chart = try await chartResult
-            // Neueste Ablesungen zuerst.
-            readings = try await readingsResult.sorted { $0.date > $1.date }
+            let freshStats = try await statsResult
+            let freshChart = try await chartResult
+            let freshReadings = try await readingsResult.sorted { $0.date > $1.date }
+
+            stats = freshStats
+            chart = freshChart
+            readings = freshReadings
+            lastUpdated = Date()
+            isShowingCached = false
+            errorMessage = nil
+
+            cache.save(freshStats, for: CacheStore.Key.stats(systemID))
+            cache.save(freshChart, for: CacheStore.Key.chart(systemID))
+            cache.save(freshReadings, for: CacheStore.Key.readings(systemID))
         } catch let error as APIError {
-            errorMessage = error.errorDescription
+            if stats != nil || !readings.isEmpty {
+                isShowingCached = true
+                errorMessage = nil
+            } else {
+                errorMessage = error.errorDescription
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

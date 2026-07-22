@@ -46,6 +46,10 @@ struct SystemDetailView: View {
         }
         .refreshable { await model.refresh() }
         .task { await model.load() }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            CacheStatusBar(isShowingCached: model.isShowingCached,
+                           lastUpdated: model.lastUpdated)
+        }
         .overlay {
             if model.isLoading { ProgressView() }
         }

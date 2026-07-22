@@ -64,4 +64,17 @@ enum Format {
         guard let date else { return "–" }
         return monthFormatter.string(from: date)
     }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    /// Relativer Zeitpunkt, z. B. „vor 5 Minuten". `nil` -> "–".
+    static func relative(_ date: Date?) -> String {
+        guard let date else { return "–" }
+        return relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
 }
