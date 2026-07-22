@@ -10,6 +10,7 @@ enum StorageKeys {
     static let sessionToken = "session_token"
     static let cfClientId = "cf_access_client_id"
     static let cfClientSecret = "cf_access_client_secret"
+    static let activeDatabaseID = "active_database_id"
     static let keychainService = "de.zaehlwerk.app"
 }
 
@@ -18,6 +19,12 @@ struct ServerSettings: Sendable {
         guard let raw = UserDefaults.standard.string(forKey: StorageKeys.baseURL),
               !raw.isEmpty else { return nil }
         return URL(string: raw)
+    }
+
+    /// Aktive Mandanten-DB (Header `X-Zaehlwerk-Database`). Leer = Standard-DB.
+    var activeDatabaseID: String? {
+        let raw = UserDefaults.standard.string(forKey: StorageKeys.activeDatabaseID)
+        return (raw?.isEmpty == false) ? raw : nil
     }
 }
 

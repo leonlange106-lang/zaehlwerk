@@ -100,6 +100,10 @@ final class APIClient: @unchecked Sendable {
             request.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
             request.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
         }
+        // Aktive Mandanten-DB mitschalten (Kontextwechsel im Multi-DB-Betrieb).
+        if let dbID = server.activeDatabaseID {
+            request.setValue(dbID, forHTTPHeaderField: "X-Zaehlwerk-Database")
+        }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONCoding.encoder.encode(body)

@@ -26,6 +26,8 @@ final class AuthManager {
     var isBusy = false
 
     var user: User? { status?.user }
+    var isAdmin: Bool { (status?.isAdmin ?? false) || (user?.isAdmin ?? false) }
+    var activeDatabaseID: String? { config.activeDatabaseID }
     var isConfigured: Bool { config.isConfigured }
     var serverURLString: String {
         get { config.baseURLString }
@@ -121,6 +123,15 @@ final class AuthManager {
             await self.refreshStatus()
         }
         return errorMessage == nil
+    }
+
+    // MARK: - Mandanten-DB wechseln
+
+    /// Aktive Mandanten-DB umschalten. Setzt den Header-Kontext für den
+    /// `APIClient` und verwirft den Offline-Cache (er gehört zur alten DB).
+    func switchDatabase(to id: String?) {
+        config.activeDatabaseID = id
+        CacheStore.shared.clear()
     }
 
     // MARK: - Abmelden

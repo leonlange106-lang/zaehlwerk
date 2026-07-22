@@ -15,6 +15,7 @@ final class AppConfig {
         static let token = "session_token"
         static let cfClientId = "cf_access_client_id"
         static let cfClientSecret = "cf_access_client_secret"
+        static let activeDatabaseID = "active_database_id"
     }
 
     /// Basis-URL des Backends, z. B. `https://zaehlwerk.example.com`.
@@ -31,6 +32,8 @@ final class AppConfig {
 
     private init() {
         baseURLString = defaults.string(forKey: Keys.baseURL) ?? ""
+        let db = defaults.string(forKey: Keys.activeDatabaseID)
+        activeDatabaseID = (db?.isEmpty == false) ? db : nil
     }
 
     // MARK: - Sitzungstoken
@@ -61,7 +64,17 @@ final class AppConfig {
         }
     }
 
+    /// Aktive Mandanten-DB (Header `X-Zaehlwerk-Database`). `nil` = Standard-DB.
+    /// Bewusst in `UserDefaults`, damit die thread-sichere `ServerSettings` im
+    /// `APIClient` denselben Wert liest.
+    var activeDatabaseID: String? {
+        didSet {
+            defaults.set(activeDatabaseID ?? "", forKey: Keys.activeDatabaseID)
+        }
+    }
+
     func clearSession() {
         sessionToken = nil
+        activeDatabaseID = nil
     }
 }

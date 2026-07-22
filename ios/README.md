@@ -141,6 +141,12 @@ konnte dort nicht kompiliert werden. Bitte in Xcode bauen; kleinere Anpassungen
 - **Verlauf** – die zuletzt erfassten Ablesungen über alle Systeme.
 - **Einstellungen** – Konto, 2FA-Status inkl. nachträglicher Aktivierung,
   Passwort ändern, Server-Adresse, Abmelden.
+- **Datenbank-Wechsel** – bei Zugriff auf mehrere Mandanten-Datenbanken
+  erscheint in den Einstellungen ein Selektor; die Auswahl schaltet den
+  API-Kontext (`X-Zaehlwerk-Database`) um und verwirft den Offline-Cache.
+- **Admin-Console** (nur für Admins) – natives Pendant zum Web-Dashboard:
+  Kontostatus (online/2FA/Passwort), aktive Sitzungen mit Zwangs-Abmeldung
+  (Admin-Override) und Datenbank-Verwaltung inkl. Rechte-Matrix.
 
 ### Look-and-Feel
 

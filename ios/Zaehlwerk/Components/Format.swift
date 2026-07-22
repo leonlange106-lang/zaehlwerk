@@ -77,4 +77,19 @@ enum Format {
         guard let date else { return "–" }
         return relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
+
+    /// Datenmenge, z. B. „325 KB".
+    static func bytes(_ value: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .file)
+    }
+
+    /// Rollen-Label einer Datenbank (owner/read_write/read_only).
+    static func dbRole(_ role: String) -> String {
+        switch role {
+        case "owner":      return "Eigentümer"
+        case "read_write": return "Schreiben"
+        case "read_only":  return "Lesen"
+        default:            return role
+        }
+    }
 }

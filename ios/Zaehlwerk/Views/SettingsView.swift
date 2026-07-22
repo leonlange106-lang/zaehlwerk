@@ -6,15 +6,19 @@ struct SettingsView: View {
     @State private var showingPasswordSheet = false
     @State private var showingTwoFactorSheet = false
     @State private var showingLogoutConfirm = false
+    @State private var dbModel = DatabaseSelectorViewModel()
 
     var body: some View {
         NavigationStack {
             List {
                 accountSection
+                databaseSection
+                adminSection
                 securitySection
                 connectionSection
                 logoutSection
             }
+            .task { await dbModel.load() }
             .listStyle(.insetGrouped)
             .navigationTitle("Einstellungen")
             .sheet(isPresented: $showingPasswordSheet) { ChangePasswordView() }
@@ -38,6 +42,41 @@ struct SettingsView: View {
                 LabeledContent("Rolle", value: user.role.capitalized)
                 LabeledContent("Quelle",
                                value: user.source == "homeassistant" ? "Home Assistant" : "Lokal")
+            }
+        }
+    }
+
+    // MARK: - Datenbank (Multi-DB-Kontext)
+
+    @ViewBuilder
+    private var databaseSection: some View {
+        if dbModel.hasChoice {
+            Section {
+                NavigationLink {
+                    DatabaseSelectorView()
+                } label: {
+                    LabeledContent("Aktive Datenbank",
+                                   value: dbModel.activeName ?? "Standard")
+                }
+            } header: {
+                Text("Datenbank")
+            } footer: {
+                Text("Wechsle zwischen den Datenbanken, auf die du Zugriff hast.")
+            }
+        }
+    }
+
+    // MARK: - Administration (nur für Admins)
+
+    @ViewBuilder
+    private var adminSection: some View {
+        if auth.isAdmin {
+            Section("Administration") {
+                NavigationLink {
+                    AdminConsoleView()
+                } label: {
+                    Label("Admin-Console", systemImage: "person.2.badge.gearshape")
+                }
             }
         }
     }

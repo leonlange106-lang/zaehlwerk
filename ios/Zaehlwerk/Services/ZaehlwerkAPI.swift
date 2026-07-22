@@ -79,4 +79,47 @@ extension APIClient {
     func fetchDashboard(months: Int = 24) async throws -> DashboardData {
         try await get("/api/dashboard/data", query: ["months": String(months)])
     }
+
+    // MARK: - Mandanten-Datenbanken (Multi-DB)
+
+    func fetchDatabases() async throws -> DatabaseListResponse {
+        try await get("/api/databases")
+    }
+
+    // MARK: - Admin: Datenbanken & Rechte-Matrix
+
+    func fetchAdminDatabases() async throws -> [AdminDatabase] {
+        try await get("/api/admin/databases")
+    }
+
+    func fetchDatabaseAccess(databaseID: String) async throws -> [DatabaseAccessEntry] {
+        try await get("/api/admin/databases/\(databaseID)/access")
+    }
+
+    func grantDatabaseAccess(databaseID: String, userID: String, role: String) async throws {
+        try await postNoContent("/api/admin/databases/\(databaseID)/access",
+                                body: GrantAccessRequest(user_id: userID, role: role))
+    }
+
+    func revokeDatabaseAccess(databaseID: String, userID: String) async throws {
+        try await delete("/api/admin/databases/\(databaseID)/access/\(userID)")
+    }
+
+    // MARK: - Admin: Monitoring & Session-Kontrolle
+
+    func fetchMonitoringUsers() async throws -> [AdminUserStatus] {
+        try await get("/api/admin/monitoring/users")
+    }
+
+    func fetchSessions() async throws -> [AdminSession] {
+        try await get("/api/admin/monitoring/sessions")
+    }
+
+    func terminateSession(jti: String) async throws {
+        try await delete("/api/admin/monitoring/sessions/\(jti)")
+    }
+
+    func terminateUserSessions(userID: String) async throws {
+        try await postNoContent("/api/admin/monitoring/users/\(userID)/logout")
+    }
 }
