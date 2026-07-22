@@ -71,6 +71,28 @@ extension APIClient {
         try await post("/api/systems/binding/test", body: request)
     }
 
+    // MARK: - Zähler-Metadaten (Meters)
+
+    func fetchMeters(systemID: String) async throws -> [Meter] {
+        try await get("/api/systems/\(systemID)/meters")
+    }
+
+    func fetchBauarten() async throws -> [String] {
+        try await get("/api/meters/bauarten")
+    }
+
+    func createMeter(systemID: String, _ request: MeterRequest) async throws -> Meter {
+        try await post("/api/systems/\(systemID)/meters", body: request)
+    }
+
+    func updateMeter(id: String, _ request: MeterRequest) async throws -> Meter {
+        try await patch("/api/meters/\(id)", body: request)
+    }
+
+    func deleteMeter(id: String) async throws {
+        try await delete("/api/meters/\(id)")
+    }
+
     // MARK: - Ablesungen
 
     func fetchReadings(systemID: String) async throws -> [Reading] {

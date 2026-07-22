@@ -148,6 +148,27 @@ export interface OcrResult {
   text?: string | null;
 }
 
+// ---------- Zähler-Metadaten (Meters) ----------
+export interface Meter {
+  id: string;
+  system_id: string;
+  hersteller?: string | null;
+  modell?: string | null;
+  zaehlernummer?: string | null;
+  bauart?: string | null;
+  baujahr?: number | null;
+  eichung_bis?: string | null;
+  messstellenbetreiber?: string | null;
+  stellen_vor?: number | null;
+  stellen_nach?: number | null;
+  eingebaut_am?: string | null;
+  ausgebaut_am?: string | null;
+  notiz?: string | null;
+  aktiv: boolean;
+  eichung_faellig_in_tagen?: number | null;
+  eichung_abgelaufen: boolean;
+}
+
 // ---------- Admin ----------
 export interface AdminUserStatus {
   id: string;

@@ -20,6 +20,7 @@ import { EChart } from '../../components/EChart';
 import { useAuth } from '../../auth/AuthContext';
 import { fmtValue, fmtCost, fmtDate, fmtNumber } from '../../util/format';
 import { SystemFormModal } from './SystemFormModal';
+import { MetersCard } from './MetersCard';
 
 export function SystemDetailView() {
   const { id = '' } = useParams();
@@ -128,6 +129,8 @@ export function SystemDetailView() {
       {canWrite && (
         <AddReadingForm systemId={id} unit={unit} kwhFactor={stats.data?.kwh_factor ?? null} onSaved={reloadAll} />
       )}
+
+      <MetersCard systemId={id} canWrite={canWrite} />
 
       <Card>
         <Title order={5} mb="sm">Ablesungen</Title>

@@ -25,6 +25,7 @@ struct SystemDetailView: View {
         List {
             statsSection
             chartSection
+            metersSection
             readingsSection
         }
         .listStyle(.insetGrouped)
@@ -92,6 +93,18 @@ struct SystemDetailView: View {
         }
         .overlay {
             if model.isLoading { ProgressView() }
+        }
+    }
+
+    // MARK: - Zähler-Metadaten
+
+    private var metersSection: some View {
+        Section {
+            NavigationLink {
+                MetersView(systemID: system.id)
+            } label: {
+                Label("Zähler verwalten", systemImage: "gauge.medium")
+            }
         }
     }
 
