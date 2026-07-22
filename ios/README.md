@@ -4,13 +4,13 @@ Nativer SwiftUI-Client für das dezentrale **Zählwerk**-Backend – kein WebVie
 keine Weiterleitung, sondern eine eigenständige App mit voller Funktionsparität
 zum Web-Tool (Zählerstände, Historie, Statistiken, Einstellungen).
 
-> **Status:** Schritte 1–3 sind umgesetzt. Netzwerk- & Datenschicht, vollwertige
-> HIG-Screens (Übersicht, System-Detail mit Swift-Charts-Diagramm, Ablesungs-
-> Eingabe, Verlauf, Einstellungen) sowie ein **SwiftData-Offline-Cache**
-> (Offline-First): zuletzt geladene Kennzahlen und Ablesungen sind auch ohne
-> Verbindung sichtbar, mit dezentem „Offline – Stand …"-Hinweis. Look-and-Feel
-> einer Apple-Systemapp mit Liquid-Glass-Materialien, dezenter Haptik und
-> Rücksicht auf „Transparenz reduzieren".
+> **Status:** Funktionsvollständige v1. Netzwerk- & Datenschicht, vollwertige
+> HIG-Screens (Übersicht, System-Detail mit Swift-Charts-Diagramm, Ablesung
+> erfassen, System anlegen, Verlauf, Einstellungen), **SwiftData-Offline-Cache**
+> (Offline-First mit „Offline – Stand …"-Hinweis) sowie 2FA/Onboarding. Volle
+> Parität zum Web-Tool: Zählerstände, Historie, Statistiken, Einstellungen.
+> Look-and-Feel einer Apple-Systemapp mit Liquid-Glass-Materialien, dezenter
+> Haptik und Rücksicht auf „Transparenz reduzieren".
 
 ## Architektur
 
@@ -42,7 +42,8 @@ ios/Zaehlwerk/
 ├── ViewModels/                # @MainActor @Observable – Zustand je Screen
 │   ├── DashboardViewModel.swift
 │   ├── SystemDetailViewModel.swift   # lädt Stats/Chart/Ablesungen parallel
-│   └── AddReadingViewModel.swift
+│   ├── AddReadingViewModel.swift
+│   └── AddSystemViewModel.swift
 ├── Components/                # wiederverwendbare UI-Bausteine
 │   ├── Color+Hex.swift        # Color(hex:)-Hilfsinitialisierer
 │   ├── GlassCard.swift        # Material-Karte, respektiert „Transparenz reduzieren"
@@ -59,9 +60,10 @@ ios/Zaehlwerk/
     ├── TwoFactorLoginView.swift
     ├── OnboardingView.swift
     ├── MainTabView.swift             # Schritt 2: Tab-Shell (Übersicht/Verlauf/Einstellungen)
-    ├── DashboardView.swift           # Systemkarten + Prognose
+    ├── DashboardView.swift           # Systemkarten + Prognose, „+" legt System an
     ├── SystemDetailView.swift        # Kennzahlen + Diagramm + Ablesungen
     ├── AddReadingView.swift          # Ablesungs-Eingabe (Sheet)
+    ├── AddSystemView.swift           # System anlegen (Sheet, Typ-Vorlagen)
     ├── HistoryView.swift             # Verlauf über alle Systeme
     ├── SettingsView.swift            # Konto, Sicherheit, Verbindung
     └── TwoFactorEnrollView.swift     # 2FA nachträglich aktivieren
@@ -133,6 +135,9 @@ konnte dort nicht kompiliert werden. Bitte in Xcode bauen; kleinere Anpassungen
   Wischen-zum-Löschen. „+" öffnet die Eingabe (nur mit Schreibrecht).
 - **Neue Ablesung** – Datum, Zählerstand, optionale Kosten/Notiz und
   Zählertausch mit Anfangsstand; deutsche Zahleneingabe (Komma/Punkt).
+- **System anlegen** – Typ-Vorlagen (Strom/Gas/Wasser/PV/…) füllen die passende
+  Einheit vor, freie Felder für Name/Typ/Einheit, Farbe über `ColorPicker`.
+  Erreichbar über „+" in der Übersicht (nur mit Schreibrecht).
 - **Verlauf** – die zuletzt erfassten Ablesungen über alle Systeme.
 - **Einstellungen** – Konto, 2FA-Status inkl. nachträglicher Aktivierung,
   Passwort ändern, Server-Adresse, Abmelden.
@@ -163,7 +168,12 @@ vollständig geleert (`CacheStore.clear()`), damit kein Konto fremde Daten sieht
 
 SwiftData ist Teil des SDK – **kein** zusätzliches Paket nötig.
 
-## Nächste Schritte
+## Ausbau (optional)
 
-- Feinschliff: System in der App anlegen/bearbeiten, Widgets, Diagramm-
-  Interaktion (Scrubbing), vollständige Lokalisierung.
+Die App deckt den vollen Funktionsumfang des Web-Tools ab. Denkbare Erweiterungen:
+
+- System bearbeiten/archivieren (`PATCH /api/systems/{id}`, `SystemUpdate` liegt
+  im Backend bereits vor).
+- Home-Screen-Widgets (WidgetKit) mit dem aktuellen Stand je System.
+- Diagramm-Interaktion (Scrubbing) und Export (CSV/PDF).
+- Push-Erinnerungen an fällige Ablesungen.

@@ -23,4 +23,37 @@ enum SystemStyle {
     static func color(_ hex: String?) -> Color {
         Color(hex: hex) ?? .accentColor
     }
+
+    /// Backend-Icon-Token (Feld `icon`), abgeleitet aus dem Typ.
+    static func iconName(for type: String) -> String {
+        let value = type.lowercased()
+        switch true {
+        case value.contains("strom"), value.contains("elektr"): return "bolt"
+        case value.contains("gas"):                              return "flame"
+        case value.contains("wasser"):                           return "droplet"
+        case value.contains("pv"), value.contains("solar"), value.contains("photovolt"):
+            return "sun"
+        case value.contains("wärme"), value.contains("waerme"), value.contains("heiz"),
+             value.contains("therm"):
+            return "thermometer"
+        case value.contains("öl"), value.contains("oel"):        return "fuel"
+        default:                                                 return "gauge"
+        }
+    }
+
+    /// Häufige Systemtypen mit passender Standardeinheit für das Anlege-Formular.
+    struct Preset: Identifiable, Hashable {
+        let type: String
+        let unit: String
+        var id: String { type }
+    }
+
+    static let presets: [Preset] = [
+        Preset(type: "Strom", unit: "kWh"),
+        Preset(type: "Gas", unit: "kWh"),
+        Preset(type: "Wasser", unit: "m³"),
+        Preset(type: "PV-Erzeugung", unit: "kWh"),
+        Preset(type: "Wärme", unit: "kWh"),
+        Preset(type: "Heizöl", unit: "l"),
+    ]
 }

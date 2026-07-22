@@ -3,8 +3,11 @@ import SwiftUI
 /// Übersicht aller Systeme mit Kennzahlen, Miniatur-Verlauf und Prognose.
 /// Große Navigationstitel, gruppierter Hintergrund, Karten aus Material.
 struct DashboardView: View {
+    @Environment(AuthManager.self) private var auth
     @State private var model = DashboardViewModel()
+    @State private var showingAddSystem = false
 
+    private var canWrite: Bool { auth.status?.canWrite ?? false }
     private let columns = [GridItem(.adaptive(minimum: 320), spacing: 16)]
 
     var body: some View {
@@ -17,11 +20,19 @@ struct DashboardView: View {
                     ErrorState(message: message) { Task { await model.load() } }
                         .padding(.top, 60)
                 } else if model.systems.isEmpty {
-                    ContentUnavailableView(
-                        "Keine Systeme",
-                        systemImage: "square.grid.2x2",
-                        description: Text("Lege im Web-Tool ein System an, um hier Kennzahlen zu sehen.")
-                    )
+                    ContentUnavailableView {
+                        Label("Keine Systeme", systemImage: "square.grid.2x2")
+                    } description: {
+                        Text("Lege ein System an, um hier Kennzahlen zu sehen.")
+                    } actions: {
+                        if canWrite {
+                            Button("System anlegen") {
+                                Haptics.tap()
+                                showingAddSystem = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
                     .padding(.top, 60)
                 } else {
                     LazyVGrid(columns: columns, spacing: 16) {
@@ -41,11 +52,29 @@ struct DashboardView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Übersicht")
+            .toolbar {
+                if canWrite {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            Haptics.tap()
+                            showingAddSystem = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("System anlegen")
+                    }
+                }
+            }
             .refreshable { await model.refresh() }
             .task { await model.load() }
             .safeAreaInset(edge: .top, spacing: 0) {
                 CacheStatusBar(isShowingCached: model.isShowingCached,
                                lastUpdated: model.lastUpdated)
+            }
+            .sheet(isPresented: $showingAddSystem) {
+                AddSystemView {
+                    Task { await model.refresh() }
+                }
             }
         }
     }

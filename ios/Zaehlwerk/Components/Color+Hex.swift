@@ -33,4 +33,13 @@ extension Color {
         }
         self.init(.sRGB, red: r, green: g, blue: b, opacity: a)
     }
+
+    /// Hex-Darstellung `#RRGGBB` (ohne Alpha), z. B. für das Backend-Feld `farbe`.
+    var hexString: String {
+        let ui = UIColor(self)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ui.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let clamp = { (value: CGFloat) -> Int in max(0, min(255, Int((value * 255).rounded()))) }
+        return String(format: "#%02X%02X%02X", clamp(r), clamp(g), clamp(b))
+    }
 }
