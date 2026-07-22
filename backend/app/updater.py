@@ -85,7 +85,10 @@ def check_latest(force: bool = False) -> dict:
     if not force and _latest["version"] and (now - _latest["checked_at"] < CHECK_INTERVAL_SECONDS):
         return dict(_latest)
     try:
-        data = outbound.fetch_json("github_version", {"ref": "main"})
+        # allow_offline: der Versionscheck darf seine fest verdrahtete, auf der
+        # Allowlist stehende GitHub-URL auch im Offline-Modus erreichen – sonst
+        # wäre der Update-Tab bei aktivem Kill-Switch dauerhaft funktionslos.
+        data = outbound.fetch_json("github_version", {"ref": "main"}, allow_offline=True)
         content = base64.b64decode(data.get("content", "")).decode("utf-8", "replace")
         m = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', content)
         if not m:

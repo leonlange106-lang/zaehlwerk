@@ -21,6 +21,7 @@ Schalter trennt Internet, nicht das eigene Netz.
 """
 import ipaddress
 import json
+import contextvars
 import logging
 import socket
 import threading
@@ -106,6 +107,12 @@ def is_offline() -> bool:
 _original_getaddrinfo = socket.getaddrinfo
 _guard_installed = False
 
+# Eng begrenzte Ausnahme vom Kill-Switch: die Selbst-Update-Versionsprüfung
+# darf ihre fest verdrahtete, auf der Allowlist stehende GitHub-URL auch im
+# Offline-Modus erreichen (sonst wäre der Update-Tab dauerhaft funktionslos).
+# Gilt nur für die Dauer eines so markierten Aufrufs und nur für Allowlist-Hosts.
+_allow_offline: contextvars.ContextVar = contextvars.ContextVar("zw_allow_offline", default=False)
+
 
 def _is_local_target(host: str, infos) -> bool:
     """Lokal = Loopback, privates Netz, link-local oder ein nicht auflösbarer
@@ -128,6 +135,9 @@ def _guarded_getaddrinfo(host, port, *args, **kwargs):
     if not _offline:
         return infos
     if _is_local_target(str(host), infos):
+        return infos
+    # Ausnahme nur für einen ausdrücklich markierten Aufruf zu einem Allowlist-Host.
+    if _allow_offline.get() and str(host) in ALLOWED_HOSTS:
         return infos
     log.warning("Kill-Switch hat ausgehende Verbindung zu %s blockiert", host)
     raise OSError(
@@ -160,7 +170,8 @@ def cached(key: str, ttl: int):
     return data, age
 
 
-def fetch_json(provider: str, params: dict | None = None, *, timeout: int = 10) -> dict:
+def fetch_json(provider: str, params: dict | None = None, *, timeout: int = 10,
+               allow_offline: bool = False) -> dict:
     """Einziger vorgesehener Weg nach draußen.
 
     Fehlertolerant: Ist der Abruf nicht möglich – Offline-Modus, kein Netz,
@@ -181,7 +192,7 @@ def fetch_json(provider: str, params: dict | None = None, *, timeout: int = 10) 
     if data is not None and age is not None and age < cfg["ttl"]:
         return {**data, "_cached": True, "_age_seconds": int(age)}
 
-    if _offline:
+    if _offline and not allow_offline:
         if data is not None:
             return {**data, "_cached": True, "_stale": True, "_age_seconds": int(age)}
         raise OutboundBlocked(
@@ -199,6 +210,9 @@ def fetch_json(provider: str, params: dict | None = None, *, timeout: int = 10) 
         "User-Agent": USER_AGENT,
         "Accept": "application/json",
     })
+    # Nur für einen ausdrücklich erlaubten Offline-Abruf die Socket-Sperre für
+    # die Dauer dieses Aufrufs freigeben (Host steht auf der Allowlist).
+    token = _allow_offline.set(True) if (allow_offline and _offline) else None
     try:
         # Kein Redirect-Folgen über den Standard hinaus: ein 302 auf einen
         # fremden Host würde die Allowlist aushebeln. Der Socket-Guard fängt
@@ -215,6 +229,9 @@ def fetch_json(provider: str, params: dict | None = None, *, timeout: int = 10) 
             log.warning("Abruf %s fehlgeschlagen (%s) – liefere Cache", provider, exc)
             return {**data, "_cached": True, "_stale": True, "_age_seconds": int(age or 0)}
         raise OutboundBlocked(f"Abruf fehlgeschlagen: {exc}") from exc
+    finally:
+        if token is not None:
+            _allow_offline.reset(token)
 
     _cache[key] = (time.time(), payload)
     return {**payload, "_cached": False, "_age_seconds": 0}
