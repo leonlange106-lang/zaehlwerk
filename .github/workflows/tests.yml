@@ -21,8 +21,21 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Pytest
         run: pytest
-      - name: Frontend syntax check
-        run: node --check frontend/app.js
+
+  webapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/webapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck & build (Vite + tsc)
+        run: npm run build
 
   integration:
     runs-on: ubuntu-latest
