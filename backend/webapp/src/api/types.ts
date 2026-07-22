@@ -139,3 +139,72 @@ export interface OcrResult {
   previous?: number | null;
   text?: string | null;
 }
+
+// ---------- Admin ----------
+export interface AdminUserStatus {
+  id: string;
+  username: string;
+  display_name: string;
+  role: string;
+  is_admin: boolean;
+  aktiv: boolean;
+  source: string;
+  two_factor_enabled: boolean;
+  two_factor_status: string;
+  password_status: string;
+  is_first_login: boolean;
+  last_seen: string | null;
+  online: boolean;
+  active_sessions: number;
+}
+
+export interface AdminSession {
+  jti: string;
+  user_id: string;
+  username: string;
+  created_at: string;
+  last_seen: string;
+  expires_at: string;
+  user_agent: string | null;
+  ip: string | null;
+  current: boolean;
+}
+
+export interface AdminDatabase {
+  id: string;
+  name: string;
+  is_default: boolean;
+  db_kind: string;
+  owner_user_id: string;
+  owner_name: string | null;
+  size_bytes: number;
+  shared_with: number;
+}
+
+export interface DatabaseAccessEntry {
+  user_id: string;
+  role: string;
+  implicit: boolean;
+}
+
+export interface LogEntry {
+  ts: string;
+  level: string;
+  logger: string;
+  message: string;
+}
+
+export interface QueryResult {
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+}
+
+export interface UpdateStatus {
+  supported: boolean;
+  current: string;
+  latest?: string | null;
+  update_available?: boolean;
+  pending?: unknown;
+}

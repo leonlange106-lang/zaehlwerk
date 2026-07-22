@@ -22,8 +22,3 @@ export const SettingsView = () => (
   <Placeholder title="Einstellungen"
     note="Darstellung, Konto, Zwei-Faktor, Netzwerk, Datenmanagement – Migration folgt." />
 );
-
-export const AdminView = () => (
-  <Placeholder title="Admin"
-    note="Monitoring, Datenbanken, Diagnose, SQL-Abfrage, Protokoll – Migration folgt." />
-);
